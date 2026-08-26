@@ -1,0 +1,97 @@
+# Vault CI — her pull_request'te lint → typecheck → test → build sırasıyla çalışır.
+# Deploy adımı yoktur (mimari-kararlar INF-002). Test izolasyonu için CI kendi
+# Postgres/Redis service container'ını ayağa kaldırır (docs/09_DEV_WORKFLOW.md §5),
+# geliştiricinin lokal docker-compose Postgres'iyle asla paylaşılmaz.
+
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  ci:
+    name: lint → typecheck → test → build
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vault
+          POSTGRES_PASSWORD: vault
+          POSTGRES_DB: vault
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vault"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    # Env şeması (apps/api/src/config/env.schema.ts) fail-fast doğrulama yapar;
+    # CI'da gerçek secret yoktur, yalnızca formatça geçerli dummy değerler kullanılır
+    # (docs/09_DEV_WORKFLOW.md §7 — hiçbir gerçek secret bu dosyada yer almaz).
+    env:
+      NODE_ENV: test
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://vault:vault@localhost:5432/vault
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      JWT_ACCESS_TTL: 15m
+      JWT_REFRESH_SECRET: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      JWT_REFRESH_TTL: 7d
+      MASTER_ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
+      HD_WALLET_MNEMONIC: "test test test test test test test test test test test junk"
+      MINT_OPERATOR_PRIVATE_KEY: "0x1111111111111111111111111111111111111111111111111111111111111111"
+      SEPOLIA_RPC_URL: https://sepolia.infura.io/v3/dummy
+      BSC_TESTNET_RPC_URL: https://bsc-testnet.publicnode.com
+      TRON_SHASTA_RPC_URL: https://api.shasta.trongrid.io
+      ALCHEMY_API_KEY: ci-dummy-alchemy-key
+      ALCHEMY_WEBHOOK_SIGNING_KEY: ci-dummy-webhook-key
+      TRONGRID_API_KEY: ci-dummy-trongrid-key
+      CHAIN_ID_ALLOWLIST: sepolia,bsc-testnet,tron-shasta
+      CORS_ORIGIN: http://localhost:3000
+      COOKIE_SECURE: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter api exec prisma generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build
+        run: pnpm build
