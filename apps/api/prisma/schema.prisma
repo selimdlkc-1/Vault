@@ -1,0 +1,84 @@
+// Vault — Prisma şeması.
+// Tek doğruluk kaynağı: docs/02_DATABASE_SCHEMA.md.
+// Bu iterasyon (Faz 0 §0.3) yalnızca users, networks, assets, network_assets
+// tablolarını içerir — diğer tablolar sonraki fazlarda eklenir.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  user
+  admin
+
+  @@map("user_role")
+}
+
+enum ChainType {
+  evm
+  tron
+
+  @@map("chain_type")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.1
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  role         UserRole @default(user)
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("users")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.2
+model Network {
+  id                     String   @id @default(uuid()) @db.Uuid
+  name                   String
+  chainType              ChainType @map("chain_type")
+  chainId                String   @unique @map("chain_id")
+  confirmationThreshold  Int      @map("confirmation_threshold")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  assets        Asset[]
+  networkAssets NetworkAsset[]
+
+  @@map("networks")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.3
+model Asset {
+  id              String   @id @default(uuid()) @db.Uuid
+  networkId       String   @map("network_id") @db.Uuid
+  symbol          String
+  decimals        Int
+  contractAddress String?  @map("contract_address")
+  coingeckoId     String   @map("coingecko_id")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  network       Network        @relation(fields: [networkId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  networkAssets NetworkAsset[]
+
+  @@unique([networkId, symbol])
+  @@map("assets")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.4 — Network/Asset aktivasyon join tablosu (AUTH-003).
+model NetworkAsset {
+  networkId    String    @map("network_id") @db.Uuid
+  assetId      String    @map("asset_id") @db.Uuid
+  isActive     Boolean   @default(false) @map("is_active")
+  activatedAt  DateTime? @map("activated_at") @db.Timestamptz
+
+  network Network @relation(fields: [networkId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  asset   Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([networkId, assetId])
+  @@map("network_assets")
+}
