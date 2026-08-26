@@ -33,3 +33,6 @@ Thumbs.db
 
 # Prisma
 apps/api/prisma/generated/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
