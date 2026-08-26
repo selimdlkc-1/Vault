@@ -70,7 +70,7 @@ Fazlar arasında paralelleştirme yapılmaz — her faz tek bir agent oturumu zi
 
 ## 3. Faz Detayları
 
-### Faz 0 — Altyapı ve Monorepo Temeli
+### Faz 0 — Altyapı ve Monorepo Temeli ✅ Tamamlandı (2026-08-26)
 
 **§0.1 — Monorepo iskeleti.** Turborepo kurulumu; `apps/web` (Next.js App Router), `apps/api` (NestJS), `packages/types`, `packages/chain-providers`, `packages/config` boş ama derlenebilir paketler olarak oluşturulur. Kök `pnpm-lock.yaml`, paylaşılan ESLint/TS config'leri.
 
@@ -82,7 +82,7 @@ Fazlar arasında paralelleştirme yapılmaz — her faz tek bir agent oturumu zi
 
 **§0.5 — Seed script iskeleti.** `apps/api/prisma/seed.ts`, idempotent upsert kalıbıyla, şu an için boş bir yapı (Faz 2'de network/asset verisiyle doldurulacak).
 
-**İnsan onay noktası:** Faz 0 sonunda `docker-compose up` ile tüm sistemin (henüz işlevsiz de olsa) ayağa kalktığı ve CI'ın yeşil olduğu doğrulanır.
+**İnsan onay noktası:** Faz 0 sonunda `docker-compose up` ile tüm sistemin (henüz işlevsiz de olsa) ayağa kalktığı ve CI'ın yeşil olduğu doğrulanır. ✅ Doğrulandı — `feat/seed-script-skeleton` PR'ı (§0.5).
 
 ### Faz 1 — Kimlik Doğrulama ve Roller
 
