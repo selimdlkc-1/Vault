@@ -58,6 +58,10 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     restart: unless-stopped
+    environment:
+      # Next, `/api/v1/*` isteklerini container ağı üzerinden `apps/api`'ye proxy'ler
+      # (apps/web/next.config.mjs). Tarayıcı yalnızca localhost:3000 ile konuşur.
+      API_PROXY_TARGET: http://api:3001
     ports:
       - "3000:3000"
     depends_on:

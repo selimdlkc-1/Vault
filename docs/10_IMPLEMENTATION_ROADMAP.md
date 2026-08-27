@@ -84,7 +84,7 @@ Fazlar arasında paralelleştirme yapılmaz — her faz tek bir agent oturumu zi
 
 **İnsan onay noktası:** Faz 0 sonunda `docker-compose up` ile tüm sistemin (henüz işlevsiz de olsa) ayağa kalktığı ve CI'ın yeşil olduğu doğrulanır. ✅ Doğrulandı — `feat/seed-script-skeleton` PR'ı (§0.5).
 
-### Faz 1 — Kimlik Doğrulama ve Roller
+### Faz 1 — Kimlik Doğrulama ve Roller ✅ Tamamlandı (2026-08-27)
 
 **§1.1 — Kullanıcı modeli ve şifre hash'leme.** `users` tablosu tam alanlarıyla (`email`, `password_hash`, `role`); argon2id hash servisi.
 
@@ -100,7 +100,7 @@ Fazlar arasında paralelleştirme yapılmaz — her faz tek bir agent oturumu zi
 
 **§1.7 — Frontend auth akışı.** S-AUTH-LOGIN, S-AUTH-REGISTER ekranları; `AuthContext` (access token yalnızca bellekte); route middleware (korumalı route yönlendirmesi); S-SESSION-EXPIRED, S-LOGOUT-CONFIRM.
 
-**İnsan onay noktası:** Faz 1 sonunda uçtan uca bir kullanıcı kayıt olup giriş yapabiliyor, access token süresi dolduğunda otomatik refresh çalışıyor, replay senaryosu integration testiyle doğrulanmış olmalı.
+**İnsan onay noktası:** Faz 1 sonunda uçtan uca bir kullanıcı kayıt olup giriş yapabiliyor, access token süresi dolduğunda otomatik refresh çalışıyor, replay senaryosu integration testiyle doğrulanmış olmalı. ✅ Doğrulandı — `feat/frontend-auth-flow` PR'ı (§1.7); replay/rate-limit/refresh integration testleri §1.3–1.6'da, uçtan uca akış §1.7 manuel tarayıcı doğrulamasında.
 
 ### Faz 2 — Network/Asset Master Data ve Admin Temeli
 
