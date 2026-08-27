@@ -51,4 +51,19 @@ export class RefreshTokensRepository {
       data: { revokedAt: new Date() },
     });
   }
+
+  /**
+   * Replay tespiti: kullanıcının o ana kadar `revokedAt`'ı boş olan **tüm**
+   * refresh token satırlarını tek bir atomik `UPDATE` ile geçersiz kılar
+   * (`docs/07_SECURITY_IMPLEMENTATION.md` §2 — replay → tüm oturumlar). Tek
+   * `updateMany` çağrısı olduğundan eşzamanlı iki replay denemesi tutarsız
+   * sonuç üretemez. Geçersiz kılınan satır sayısını döner.
+   */
+  async revokeAllForUser(userId: string): Promise<number> {
+    const { count } = await this.prisma.refreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return count;
+  }
 }

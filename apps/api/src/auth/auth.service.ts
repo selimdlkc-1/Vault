@@ -111,8 +111,10 @@ export class AuthService {
 
   /**
    * `POST /auth/refresh` — cookie'deki ham refresh token'ı rotate eder, yeni bir
-   * access token üretir. Cookie yoksa veya token geçersiz/süresi geçmişse
-   * `AUTH_TOKEN_EXPIRED` (`docs/03` §5.1).
+   * access token üretir. Cookie yoksa veya token doğal olarak süresi geçmişse
+   * `AUTH_TOKEN_EXPIRED`; kullanılmış (revoke edilmiş) bir token tekrar sunulursa
+   * `AUTH_REFRESH_REUSE_DETECTED` + kullanıcının tüm oturumları iptal edilir
+   * (`docs/03` §5.1, Faz 1 §1.4).
    */
   async refresh(rawRefreshToken: string | undefined): Promise<AuthTokens> {
     if (!rawRefreshToken) {

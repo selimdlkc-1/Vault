@@ -78,6 +78,16 @@ class InMemoryRefreshTokensRepository {
       row.revokedAt = new Date();
     }
   }
+
+  async revokeAllForUser(userId: string): Promise<number> {
+    const active = this.rows.filter(
+      (r) => r.userId === userId && r.revokedAt === null,
+    );
+    for (const row of active) {
+      row.revokedAt = new Date();
+    }
+    return active.length;
+  }
 }
 
 /** `Set-Cookie` başlığından `refresh_token=<değer>` çiftini çıkarır (geri gönderim için). */
@@ -269,20 +279,52 @@ describe("AuthController (integration) — /api/v1/auth", () => {
       expect(response.body.error.code).toBe("AUTH_TOKEN_EXPIRED");
     });
 
-    it("rotation sonrası eski cookie tekrar sunulursa → 401 AUTH_TOKEN_EXPIRED", async () => {
-      const cookie = await loginAndGetCookie();
+    // docs/08_TESTING_STRATEGY.md §4 madde 9 — zorunlu negatif senaryo (regresyon):
+    // kullanılmış bir refresh token tekrar sunulursa replay tespiti + kullanıcının
+    // TÜM aktif oturumları geçersiz kılınır.
+    it("replay: rotate edilmiş eski cookie tekrar sunulursa → 401 AUTH_REFRESH_REUSE_DETECTED ve kullanıcının tüm oturumları iptal edilir", async () => {
+      const cookieA = await loginAndGetCookie();
 
-      await request(app.getHttpServer())
-        .post("/api/v1/auth/refresh")
-        .set("Cookie", cookie)
+      // Ayrı bir cihazdan ikinci bir oturum (aynı kullanıcı).
+      const secondLogin = await request(app.getHttpServer())
+        .post("/api/v1/auth/login")
+        .send({ email: "demo@vault.local", password: "password1" })
         .expect(200);
+      const cookieC = extractRefreshCookie(
+        secondLogin.headers["set-cookie"] as unknown as string[],
+      );
 
+      // cookieA normal şekilde rotate edilir → cookieB geçerli, cookieA revoke.
+      const rotated = await request(app.getHttpServer())
+        .post("/api/v1/auth/refresh")
+        .set("Cookie", cookieA)
+        .expect(200);
+      const cookieB = extractRefreshCookie(
+        rotated.headers["set-cookie"] as unknown as string[],
+      );
+
+      // Kullanılmış cookieA tekrar sunulur → replay.
       const replay = await request(app.getHttpServer())
         .post("/api/v1/auth/refresh")
-        .set("Cookie", cookie);
+        .set("Cookie", cookieA);
 
       expect(replay.status).toBe(401);
-      expect(replay.body.error.code).toBe("AUTH_TOKEN_EXPIRED");
+      expect(replay.body.error.code).toBe("AUTH_REFRESH_REUSE_DETECTED");
+
+      // Cascade: rotate ile yeni basılan cookieB de artık geçersiz — revoke
+      // edilmiş bir satır olduğundan tekrar sunumu da replay olarak ele alınır.
+      const afterB = await request(app.getHttpServer())
+        .post("/api/v1/auth/refresh")
+        .set("Cookie", cookieB);
+      expect(afterB.status).toBe(401);
+      expect(afterB.body.error.code).toBe("AUTH_REFRESH_REUSE_DETECTED");
+
+      // Cascade: diğer cihazın oturumu (cookieC) da geçersiz.
+      const afterC = await request(app.getHttpServer())
+        .post("/api/v1/auth/refresh")
+        .set("Cookie", cookieC);
+      expect(afterC.status).toBe(401);
+      expect(afterC.body.error.code).toBe("AUTH_REFRESH_REUSE_DETECTED");
     });
   });
 });

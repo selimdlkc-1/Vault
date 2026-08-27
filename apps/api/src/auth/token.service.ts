@@ -2,7 +2,10 @@ import { createHmac, randomBytes } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
-import { AuthTokenExpiredException } from "../common/exceptions/domain.exception";
+import {
+  AuthRefreshReuseDetectedException,
+  AuthTokenExpiredException,
+} from "../common/exceptions/domain.exception";
 import type { EnvConfig } from "../config/env.schema";
 import type { PublicUser } from "./auth.service";
 import { RefreshTokensRepository } from "./refresh-tokens.repository";
@@ -75,25 +78,30 @@ export class TokenService {
   }
 
   /**
-   * Rotation: sunulan ham token hash'lenip bulunur. Yoksa / süresi geçmişse /
-   * zaten revoke edilmişse `AUTH_TOKEN_EXPIRED`. Geçerliyse eski satır revoke
-   * edilir + yeni satır oluşturulur (tek transaction) ve yeni ham token döner.
+   * Rotation: sunulan ham token hash'lenip bulunur.
    *
-   * Not: "zaten revoke edilmiş bir token'ın tekrar kullanımı" (replay) ayrı bir
-   * hata kodu + tüm oturumların iptali olarak Faz 1 §1.4'te ele alınır; bu
-   * iterasyonda o durum da bu genel koda düşer.
+   * - Satır yoksa veya doğal olarak süresi geçmişse → `AUTH_TOKEN_EXPIRED`.
+   * - Satır var ama zaten revoke edilmişse → **replay**: önce o kullanıcının
+   *   tüm aktif refresh token'ları geçersiz kılınır, sonra
+   *   `AUTH_REFRESH_REUSE_DETECTED` fırlatılır (Faz 1 §1.4,
+   *   `docs/07_SECURITY_IMPLEMENTATION.md` §2). Revoke → hata sırası önemlidir:
+   *   `revokeAllForUser` tek atomik `updateMany` olduğundan eşzamanlı iki replay
+   *   denemesi de tutarlı biçimde tüm oturumları kapatır.
+   * - Geçerliyse eski satır revoke edilir + yeni satır oluşturulur (tek
+   *   transaction) ve yeni ham token döner.
    */
   async rotateRefreshToken(rawOldToken: string): Promise<RotatedRefreshToken> {
     const existing = await this.refreshTokens.findByHash(
       this.hashRefreshToken(rawOldToken),
     );
 
-    if (
-      !existing ||
-      existing.revokedAt !== null ||
-      existing.expiresAt.getTime() <= Date.now()
-    ) {
+    if (!existing || existing.expiresAt.getTime() <= Date.now()) {
       throw new AuthTokenExpiredException();
+    }
+
+    if (existing.revokedAt !== null) {
+      await this.refreshTokens.revokeAllForUser(existing.userId);
+      throw new AuthRefreshReuseDetectedException();
     }
 
     const raw = randomBytes(32).toString("hex");
