@@ -53,6 +53,18 @@ export class RefreshTokensRepository {
   }
 
   /**
+   * Logout: sunulan token hash'ine karşılık gelen aktif satırı geçersiz kılar.
+   * Eşleşen aktif satır yoksa (cookie yok, zaten revoke, uydurma değer) sessiz
+   * no-op — `docs/03_API_CONTRACTS.md` §5.1 bu durum için hata kodu tanımlamaz.
+   */
+  async revokeByHash(tokenHash: string): Promise<void> {
+    await this.prisma.refreshToken.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+  }
+
+  /**
    * Replay tespiti: kullanıcının o ana kadar `revokedAt`'ı boş olan **tüm**
    * refresh token satırlarını tek bir atomik `UPDATE` ile geçersiz kılar
    * (`docs/07_SECURITY_IMPLEMENTATION.md` §2 — replay → tüm oturumlar). Tek

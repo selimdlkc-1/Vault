@@ -17,6 +17,8 @@ import { UsersRepository } from "./users.repository";
  * Faz 1 §1.2: register endpoint + `AuthService` çekirdeği.
  * Faz 1 §1.3: JWT access token + rotating refresh cookie (`TokenService`,
  * `RefreshTokensRepository`, `JwtModule`).
+ * Faz 1 §1.5: `JwtModule` dışa aktarılır — global `JwtAuthGuard` (`APP_GUARD`,
+ * `AppModule`) access token'ı doğrulamak için `JwtService`'i buradan alır.
  *
  * `PrismaModule` ve global `ConfigModule` ayrıca import edilmez (ikisi de global).
  */
@@ -40,6 +42,6 @@ import { UsersRepository } from "./users.repository";
     UsersRepository,
     RefreshTokensRepository,
   ],
-  exports: [PasswordService],
+  exports: [PasswordService, JwtModule],
 })
 export class AuthModule {}

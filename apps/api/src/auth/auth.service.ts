@@ -132,4 +132,13 @@ export class AuthService {
     const accessToken = await this.tokens.issueAccessToken(toPublicUser(user));
     return { accessToken, rawRefreshToken: rotated.rawRefreshToken };
   }
+
+  /**
+   * `POST /auth/logout` — mevcut refresh token'ı geçersiz kılar (`docs/03` §5.1,
+   * Faz 1 §1.5). Cookie yoksa/eşleşmiyorsa sessiz no-op; endpoint her durumda
+   * `204` döner ve cookie'yi temizler (controller sorumluluğu).
+   */
+  async logout(rawRefreshToken: string | undefined): Promise<void> {
+    await this.tokens.revokeRefreshToken(rawRefreshToken);
+  }
 }

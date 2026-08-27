@@ -79,6 +79,15 @@ class InMemoryRefreshTokensRepository {
     }
   }
 
+  async revokeByHash(tokenHash: string): Promise<void> {
+    const row = this.rows.find(
+      (r) => r.tokenHash === tokenHash && r.revokedAt === null,
+    );
+    if (row) {
+      row.revokedAt = new Date();
+    }
+  }
+
   async revokeAllForUser(userId: string): Promise<number> {
     const active = this.rows.filter(
       (r) => r.userId === userId && r.revokedAt === null,
@@ -325,6 +334,46 @@ describe("AuthController (integration) — /api/v1/auth", () => {
         .set("Cookie", cookieC);
       expect(afterC.status).toBe(401);
       expect(afterC.body.error.code).toBe("AUTH_REFRESH_REUSE_DETECTED");
+    });
+  });
+
+  describe("POST /auth/logout", () => {
+    it("geçerli refresh cookie → 204, cookie temizlenir, sonraki refresh reddedilir", async () => {
+      await registerUser();
+      const login = await request(app.getHttpServer())
+        .post("/api/v1/auth/login")
+        .send({ email: "demo@vault.local", password: "password1" })
+        .expect(200);
+      const cookie = extractRefreshCookie(
+        login.headers["set-cookie"] as unknown as string[],
+      );
+
+      const logout = await request(app.getHttpServer())
+        .post("/api/v1/auth/logout")
+        .set("Cookie", cookie);
+
+      expect(logout.status).toBe(204);
+      expect(logout.body).toEqual({});
+      const cleared = (
+        logout.headers["set-cookie"] as unknown as string[]
+      ).find((c) => c.startsWith("refresh_token="));
+      expect(cleared).toMatch(/^refresh_token=;/);
+      expect(cleared).toContain("Path=/api/v1/auth");
+
+      // Logout, satırı revoke ettiğinden aynı cookie ile refresh artık geçmez —
+      // revoke edilmiş bir satırın tekrar sunumu §1.4 replay dalına düşer.
+      const afterLogout = await request(app.getHttpServer())
+        .post("/api/v1/auth/refresh")
+        .set("Cookie", cookie);
+      expect(afterLogout.status).toBe(401);
+      expect(afterLogout.body.error.code).toBe("AUTH_REFRESH_REUSE_DETECTED");
+    });
+
+    it("cookie yok → yine 204 (sessiz no-op)", async () => {
+      const response = await request(app.getHttpServer()).post(
+        "/api/v1/auth/logout",
+      );
+      expect(response.status).toBe(204);
     });
   });
 });

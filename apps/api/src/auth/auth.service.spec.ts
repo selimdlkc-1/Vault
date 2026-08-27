@@ -28,7 +28,10 @@ describe("AuthService", () => {
   let tokens: jest.Mocked<
     Pick<
       TokenService,
-      "issueAccessToken" | "issueRefreshToken" | "rotateRefreshToken"
+      | "issueAccessToken"
+      | "issueRefreshToken"
+      | "rotateRefreshToken"
+      | "revokeRefreshToken"
     >
   >;
   let service: AuthService;
@@ -40,6 +43,7 @@ describe("AuthService", () => {
       issueAccessToken: jest.fn(),
       issueRefreshToken: jest.fn(),
       rotateRefreshToken: jest.fn(),
+      revokeRefreshToken: jest.fn(),
     };
     service = new AuthService(
       users as unknown as UsersRepository,
@@ -196,6 +200,18 @@ describe("AuthService", () => {
         AuthTokenExpiredException,
       );
       expect(tokens.issueAccessToken).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("logout", () => {
+    it("mevcut refresh token'ı geçersiz kılmak için TokenService'e devreder", async () => {
+      await service.logout("raw-refresh");
+      expect(tokens.revokeRefreshToken).toHaveBeenCalledWith("raw-refresh");
+    });
+
+    it("token yoksa yine de hatasız tamamlanır (no-op)", async () => {
+      await expect(service.logout(undefined)).resolves.toBeUndefined();
+      expect(tokens.revokeRefreshToken).toHaveBeenCalledWith(undefined);
     });
   });
 });
