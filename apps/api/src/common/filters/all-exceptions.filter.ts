@@ -5,6 +5,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { ThrottlerException } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { DomainException } from "../exceptions/domain.exception";
 
@@ -19,7 +20,10 @@ interface ErrorEnvelope {
  * 1. `DomainException` → `code` / `httpStatus` / `details` doğrudan envelope'a.
  * 2. Bilinen Prisma hatası (`P2002` unique ihlali) → ilgili `DomainException`
  *    karşılığına çevrilir. Faz 1'de tek unique kısıt `users.email`.
- * 3. Hiçbiri değilse → `500 INTERNAL_ERROR`; ham mesaj/stack yalnızca log'a
+ * 3. `ThrottlerException` (`@nestjs/throttler`) → `429 RATE_LIMIT_EXCEEDED`
+ *    (`docs/03_API_CONTRACTS.md` §6). `Retry-After` başlığını guard zaten yanıta
+ *    eklemiştir; `.json()` mevcut başlıkları korur.
+ * 4. Hiçbiri değilse → `500 INTERNAL_ERROR`; ham mesaj/stack yalnızca log'a
  *    yazılır (`docs/04` §9), API yanıtına asla yansımaz.
  */
 @Catch()
@@ -53,6 +57,15 @@ export class AllExceptionsFilter implements ExceptionFilter {
         code: exception.code,
         message: exception.message,
         details: exception.details ?? null,
+      };
+    }
+
+    if (exception instanceof ThrottlerException) {
+      return {
+        httpStatus: 429,
+        code: "RATE_LIMIT_EXCEEDED",
+        message: "Çok fazla istek gönderildi. Lütfen bir süre sonra tekrar deneyin.",
+        details: null,
       };
     }
 

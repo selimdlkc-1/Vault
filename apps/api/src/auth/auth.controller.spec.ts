@@ -376,4 +376,58 @@ describe("AuthController (integration) — /api/v1/auth", () => {
       expect(response.status).toBe(204);
     });
   });
+
+  // docs/08_TESTING_STRATEGY.md §4 madde 10 — zorunlu negatif senaryo (regresyon):
+  // rate limit eşiği aşıldığında (özellikle login) istek 429 ile reddedilir.
+  describe("Rate limiting (docs/03 §6)", () => {
+    it("login: aynı IP+email ile 6. deneme → 429 RATE_LIMIT_EXCEEDED + Retry-After", async () => {
+      await registerUser();
+      const server = app.getHttpServer();
+      const attempt = () =>
+        request(server)
+          .post("/api/v1/auth/login")
+          .send({ email: "demo@vault.local", password: "wrong-pass-1" });
+
+      // İlk 5 deneme limit içinde → kimlik hatası (401), rate limit değil.
+      for (let i = 0; i < 5; i++) {
+        const res = await attempt();
+        expect(res.status).toBe(401);
+        expect(res.body.error.code).toBe("AUTH_INVALID_CREDENTIALS");
+      }
+
+      const blocked = await attempt();
+      expect(blocked.status).toBe(429);
+      expect(blocked.body.error.code).toBe("RATE_LIMIT_EXCEEDED");
+      expect(blocked.headers["retry-after"]).toBeDefined();
+    });
+
+    it("login: aynı IP farklı email → ayrı bucket, kilitlenmez", async () => {
+      const server = app.getHttpServer();
+
+      for (let i = 0; i < 6; i++) {
+        const res = await request(server)
+          .post("/api/v1/auth/login")
+          .send({ email: `user${i}@vault.local`, password: "wrong-pass-1" });
+        expect(res.status).toBe(401);
+      }
+    });
+
+    it("register: aynı IP ile 4. istek → 429 RATE_LIMIT_EXCEEDED", async () => {
+      const server = app.getHttpServer();
+
+      for (let i = 0; i < 3; i++) {
+        await request(server)
+          .post("/api/v1/auth/register")
+          .send({ email: `reg${i}@vault.local`, password: "password1" })
+          .expect(201);
+      }
+
+      const blocked = await request(server)
+        .post("/api/v1/auth/register")
+        .send({ email: "reg-blocked@vault.local", password: "password1" });
+
+      expect(blocked.status).toBe(429);
+      expect(blocked.body.error.code).toBe("RATE_LIMIT_EXCEEDED");
+    });
+  });
 });
