@@ -76,6 +76,35 @@ export class AuthRefreshReuseDetectedException extends DomainException {
   }
 }
 
+/**
+ * `401 AUTH_TOKEN_INVALID` — `Authorization: Bearer` header'ı yok, biçimsiz veya
+ * içindeki JWT imzası/yapısı geçersiz (`docs/03_API_CONTRACTS.md` §3/§4). Doğal
+ * süre dolumu bundan ayrıdır (`AUTH_TOKEN_EXPIRED`) — istemci ilkinde refresh
+ * denemeli, bunda yeniden login olmalıdır.
+ */
+export class AuthTokenInvalidException extends DomainException {
+  readonly code = "AUTH_TOKEN_INVALID";
+  readonly httpStatus = 401;
+
+  constructor() {
+    super("Oturum bilginiz geçersiz. Lütfen tekrar giriş yapın.");
+  }
+}
+
+/**
+ * `403 FORBIDDEN_ROLE` — kimliği doğrulanmış bir kullanıcının rolü, endpoint'in
+ * `@Roles()` ile istediği rolü karşılamıyor (`docs/03_API_CONTRACTS.md` §3,
+ * `docs/04_BACKEND_SPEC.md` §4 adım 5).
+ */
+export class ForbiddenRoleException extends DomainException {
+  readonly code = "FORBIDDEN_ROLE";
+  readonly httpStatus = 403;
+
+  constructor() {
+    super("Bu işlem için yetkiniz yok.");
+  }
+}
+
 export interface ValidationIssue {
   field: string;
   reason: string;

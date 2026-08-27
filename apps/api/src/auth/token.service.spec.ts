@@ -69,7 +69,11 @@ describe("TokenService", () => {
   let refreshTokens: jest.Mocked<
     Pick<
       RefreshTokensRepository,
-      "create" | "findByHash" | "rotate" | "revokeAllForUser"
+      | "create"
+      | "findByHash"
+      | "rotate"
+      | "revokeAllForUser"
+      | "revokeByHash"
     >
   >;
   let service: TokenService;
@@ -87,6 +91,7 @@ describe("TokenService", () => {
       findByHash: jest.fn(),
       rotate: jest.fn(),
       revokeAllForUser: jest.fn().mockResolvedValue(1),
+      revokeByHash: jest.fn(),
     };
     service = new TokenService(
       jwt,
@@ -200,6 +205,20 @@ describe("TokenService", () => {
       expect(rotatedId).toBe("row-1");
       expect(newRow.tokenHash).toBe(expectedHash(result.rawRefreshToken));
       expect(newRow.userId).toBe("user-1");
+    });
+  });
+
+  describe("revokeRefreshToken (logout)", () => {
+    it("ham token'ın hash'iyle repository.revokeByHash çağırır", async () => {
+      await service.revokeRefreshToken("raw-token");
+      expect(refreshTokens.revokeByHash).toHaveBeenCalledWith(
+        expectedHash("raw-token"),
+      );
+    });
+
+    it("token undefined ise repository'ye hiç gitmez (sessiz no-op)", async () => {
+      await service.revokeRefreshToken(undefined);
+      expect(refreshTokens.revokeByHash).not.toHaveBeenCalled();
     });
   });
 });

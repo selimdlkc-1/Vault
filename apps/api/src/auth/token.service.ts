@@ -114,6 +114,18 @@ export class TokenService {
     return { userId: existing.userId, rawRefreshToken: raw };
   }
 
+  /**
+   * Logout: sunulan ham refresh token'a karşılık gelen aktif satırı geçersiz
+   * kılar. Token yok/eşleşmiyorsa sessizce hiçbir şey yapmaz (`docs/03` §5.1 —
+   * logout her durumda `204` döner).
+   */
+  async revokeRefreshToken(rawToken: string | undefined): Promise<void> {
+    if (!rawToken) {
+      return;
+    }
+    await this.refreshTokens.revokeByHash(this.hashRefreshToken(rawToken));
+  }
+
   private hashRefreshToken(raw: string): string {
     return createHmac("sha256", this.config.get("JWT_REFRESH_SECRET", { infer: true }))
       .update(raw)

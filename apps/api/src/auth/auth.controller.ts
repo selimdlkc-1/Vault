@@ -9,6 +9,7 @@ import {
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import type { Request, Response } from "express";
+import { Public } from "../common/decorators/public.decorator";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
 import type { EnvConfig } from "../config/env.schema";
 import { AuthService, type AuthUser, type PublicUser } from "./auth.service";
@@ -25,9 +26,9 @@ const REFRESH_COOKIE_PATH = "/api/v1/auth";
  * Auth endpoint'leri (`docs/03_API_CONTRACTS.md` §5.1). Base path `/api/v1`
  * `main.ts`'te global prefix ile eklenir → `POST /api/v1/auth/...`.
  *
- * Bu route'lar public'tir. `@Public()` dekoratörü ve global `JwtAuthGuard`
- * Faz 1 §1.5'te eklenir; o ana kadar hiçbir guard olmadığından tüm route'lar
- * zaten korumasızdır.
+ * `register`/`login`/`refresh` `@Public()` taşır (global `JwtAuthGuard`/`RolesGuard`
+ * zincirinden muaf — `docs/04_BACKEND_SPEC.md` §4). `logout` korumalıdır: geçerli
+ * bir access token gerektirir.
  */
 @Controller("auth")
 export class AuthController {
@@ -36,12 +37,14 @@ export class AuthController {
     private readonly config: ConfigService<EnvConfig, true>,
   ) {}
 
+  @Public()
   @Post("register")
   @UsePipes(new ZodValidationPipe(registerSchema))
   register(@Body() dto: RegisterDto): Promise<PublicUser> {
     return this.authService.register(dto);
   }
 
+  @Public()
   @Post("login")
   @HttpCode(200)
   async login(
@@ -54,6 +57,7 @@ export class AuthController {
     return { accessToken, user };
   }
 
+  @Public()
   @Post("refresh")
   @HttpCode(200)
   async refresh(
@@ -66,6 +70,27 @@ export class AuthController {
     );
     this.setRefreshCookie(res, rawRefreshToken);
     return { accessToken };
+  }
+
+  /**
+   * `POST /auth/logout` — global guard zinciri geçerlidir (`@Public()` YOK), yani
+   * geçerli bir access token zorunludur. Mevcut refresh token'ı geçersiz kılar,
+   * cookie'yi temizler, `204` döner (`docs/03_API_CONTRACTS.md` §5.1).
+   */
+  @Post("logout")
+  @HttpCode(204)
+  async logout(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<void> {
+    const cookies = req.cookies as Record<string, string> | undefined;
+    await this.authService.logout(cookies?.[REFRESH_COOKIE_NAME]);
+    res.clearCookie(REFRESH_COOKIE_NAME, {
+      httpOnly: true,
+      secure: this.config.get("COOKIE_SECURE", { infer: true }),
+      sameSite: "strict",
+      path: REFRESH_COOKIE_PATH,
+    });
   }
 
   /**
