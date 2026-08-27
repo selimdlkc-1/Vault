@@ -1,7 +1,9 @@
-export default function HomePage() {
-  return (
-    <main className="flex min-h-screen items-center justify-center">
-      <h1 className="text-2xl font-semibold">Vault</h1>
-    </main>
-  );
+import { redirect } from "next/navigation";
+
+/**
+ * Kök `/` — kimlik durumuna göre yönlendirir. `middleware.ts` oturum ipucu
+ * cookie'sine göre `/dashboard`'ı `/login`'e (veya tersi) çevirir.
+ */
+export default function IndexPage() {
+  redirect("/dashboard");
 }
