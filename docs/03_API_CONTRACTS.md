@@ -80,6 +80,7 @@ Error code formatı: `<DOMAIN>_<REASON>`, tamamı `UPPER_SNAKE_CASE`. Her kod te
 | Error code | HTTP status | Anlamı |
 | --- | --- | --- |
 | `VALIDATION_FAILED` | 400 | İstek gövdesi/query şeması geçersiz; `details` alanında `{ field, reason }` listesi döner |
+| `EMAIL_ALREADY_EXISTS` | 409 | Register sırasında girilen e-posta sistemde zaten kayıtlı |
 | `AUTH_INVALID_CREDENTIALS` | 401 | Email/şifre eşleşmedi (login) |
 | `AUTH_TOKEN_EXPIRED` | 401 | Access token süresi dolmuş; istemci refresh akışını tetiklemeli |
 | `AUTH_TOKEN_INVALID` | 401 | Access token geçersiz/imza hatalı |
