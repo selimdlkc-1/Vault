@@ -1,7 +1,8 @@
 // Vault — Prisma şeması.
 // Tek doğruluk kaynağı: docs/02_DATABASE_SCHEMA.md.
-// Bu iterasyon (Faz 0 §0.3) yalnızca users, networks, assets, network_assets
-// tablolarını içerir — diğer tablolar sonraki fazlarda eklenir.
+// Faz 0 §0.3: users, networks, assets, network_assets.
+// Faz 1 §1.3: refresh_tokens (SEC-013) — rotating refresh cookie + replay tespiti.
+// Diğer tablolar sonraki fazlarda eklenir.
 
 generator client {
   provider = "prisma-client-js"
@@ -34,7 +35,26 @@ model User {
   role         UserRole @default(user)
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
 
+  refreshTokens RefreshToken[]
+
   @@map("users")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.13 — rotating refresh token oturum kaydı (mimari-kararlar SEC-013).
+/// Satır silinmez; rotation/logout/replay tespitinde `revoked_at` doldurulur (tombstone).
+/// `token_hash` = ham token'ın `JWT_REFRESH_SECRET` anahtarlı HMAC-SHA256'sı (argon2id değil — doğrudan lookup).
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at") @db.Timestamptz
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  revokedAt DateTime? @map("revoked_at") @db.Timestamptz
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
 }
 
 /// docs/02_DATABASE_SCHEMA.md §2.2

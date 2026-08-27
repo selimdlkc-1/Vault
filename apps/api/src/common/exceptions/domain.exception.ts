@@ -42,6 +42,24 @@ export class AuthInvalidCredentialsException extends DomainException {
   }
 }
 
+/**
+ * `401 AUTH_TOKEN_EXPIRED` — access token'ın süresi dolduğunda (istemci refresh
+ * akışını tetiklemeli) veya `POST /auth/refresh` çağrısında sunulan refresh
+ * token'ı bulunamadığında / süresi geçtiğinde.
+ *
+ * Faz 1 §1.4'te eklenecek "kullanılmış token replay" ayrımı bu genel koddan
+ * ayrılır (`AUTH_REFRESH_REUSE_DETECTED`); bu iterasyonda revoke edilmiş bir
+ * token da bu kodu alır.
+ */
+export class AuthTokenExpiredException extends DomainException {
+  readonly code = "AUTH_TOKEN_EXPIRED";
+  readonly httpStatus = 401;
+
+  constructor() {
+    super("Oturum süreniz doldu. Lütfen tekrar giriş yapın.");
+  }
+}
+
 export interface ValidationIssue {
   field: string;
   reason: string;
