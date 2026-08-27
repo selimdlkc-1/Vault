@@ -5,6 +5,7 @@ import { AuthModule } from "./auth/auth.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { validateEnv } from "./config/env.schema";
+import { NetworksModule } from "./networks/networks.module";
 import { PrismaModule } from "./prisma/prisma.module";
 
 @Module({
@@ -21,6 +22,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     }),
     PrismaModule,
     AuthModule,
+    NetworksModule,
   ],
   controllers: [],
   providers: [

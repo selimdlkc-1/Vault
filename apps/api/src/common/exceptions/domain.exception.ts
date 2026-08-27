@@ -105,6 +105,21 @@ export class ForbiddenRoleException extends DomainException {
   }
 }
 
+/**
+ * `404 RESOURCE_NOT_FOUND` — belirtilen id ile eşleşen kayıt yok
+ * (`docs/03_API_CONTRACTS.md` §3). Biçimsiz bir path id'si de (ör. UUID
+ * olmayan `:networkId`) bu koda indirgenir — istemci açısından "yok" ile
+ * "geçersiz id" arasında bir ayrım gerekmez.
+ */
+export class ResourceNotFoundException extends DomainException {
+  readonly code = "RESOURCE_NOT_FOUND";
+  readonly httpStatus = 404;
+
+  constructor(message = "İstenen kayıt bulunamadı.") {
+    super(message);
+  }
+}
+
 export interface ValidationIssue {
   field: string;
   reason: string;
