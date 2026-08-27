@@ -5,9 +5,11 @@ import {
   Post,
   Req,
   Res,
+  UseGuards,
   UsePipes,
 } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { Throttle, ThrottlerGuard } from "@nestjs/throttler";
 import type { Request, Response } from "express";
 import { Public } from "../common/decorators/public.decorator";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
@@ -15,7 +17,16 @@ import type { EnvConfig } from "../config/env.schema";
 import { AuthService, type AuthUser, type PublicUser } from "./auth.service";
 import { loginSchema, type LoginDto } from "./dto/login.dto";
 import { registerSchema, type RegisterDto } from "./dto/register.dto";
+import { LoginThrottlerGuard } from "./login-throttler.guard";
 import { durationToMs } from "./token.service";
+
+/**
+ * Rate limit eşikleri (`docs/03_API_CONTRACTS.md` §6). `@nestjs/throttler` ttl'i
+ * milisaniye alır. Aşımda `ThrottlerException` → `AllExceptionsFilter` →
+ * `429 RATE_LIMIT_EXCEEDED` + `Retry-After`.
+ */
+const LOGIN_RATE_LIMIT = { limit: 5, ttl: 15 * 60_000 } as const;
+const REGISTER_RATE_LIMIT = { limit: 3, ttl: 60 * 60_000 } as const;
 
 /** Refresh token cookie adı (`docs/03_API_CONTRACTS.md` §4). */
 const REFRESH_COOKIE_NAME = "refresh_token";
@@ -39,6 +50,8 @@ export class AuthController {
 
   @Public()
   @Post("register")
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: REGISTER_RATE_LIMIT })
   @UsePipes(new ZodValidationPipe(registerSchema))
   register(@Body() dto: RegisterDto): Promise<PublicUser> {
     return this.authService.register(dto);
@@ -47,6 +60,8 @@ export class AuthController {
   @Public()
   @Post("login")
   @HttpCode(200)
+  @UseGuards(LoginThrottlerGuard)
+  @Throttle({ default: LOGIN_RATE_LIMIT })
   async login(
     @Body(new ZodValidationPipe(loginSchema)) dto: LoginDto,
     @Res({ passthrough: true }) res: Response,
