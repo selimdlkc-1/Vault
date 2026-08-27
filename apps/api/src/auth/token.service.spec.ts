@@ -2,7 +2,10 @@ import { createHmac } from "node:crypto";
 import { ConfigService } from "@nestjs/config";
 import { JwtService } from "@nestjs/jwt";
 import type { RefreshToken } from "@prisma/client";
-import { AuthTokenExpiredException } from "../common/exceptions/domain.exception";
+import {
+  AuthRefreshReuseDetectedException,
+  AuthTokenExpiredException,
+} from "../common/exceptions/domain.exception";
 import type { EnvConfig } from "../config/env.schema";
 import type { PublicUser } from "./auth.service";
 import type { RefreshTokensRepository } from "./refresh-tokens.repository";
@@ -64,7 +67,10 @@ describe("TokenService", () => {
   let jwt: JwtService;
   let config: ConfigService<EnvConfig, true>;
   let refreshTokens: jest.Mocked<
-    Pick<RefreshTokensRepository, "create" | "findByHash" | "rotate">
+    Pick<
+      RefreshTokensRepository,
+      "create" | "findByHash" | "rotate" | "revokeAllForUser"
+    >
   >;
   let service: TokenService;
 
@@ -80,6 +86,7 @@ describe("TokenService", () => {
       create: jest.fn(),
       findByHash: jest.fn(),
       rotate: jest.fn(),
+      revokeAllForUser: jest.fn().mockResolvedValue(1),
     };
     service = new TokenService(
       jwt,
@@ -137,14 +144,32 @@ describe("TokenService", () => {
       expect(refreshTokens.rotate).not.toHaveBeenCalled();
     });
 
-    it("token zaten revoke edilmişse AUTH_TOKEN_EXPIRED", async () => {
+    it("token zaten revoke edilmişse (replay) AUTH_REFRESH_REUSE_DETECTED + kullanıcının tüm oturumları iptal", async () => {
       refreshTokens.findByHash.mockResolvedValue(
-        buildRow({ revokedAt: new Date() }),
+        buildRow({ userId: "user-1", revokedAt: new Date() }),
       );
+
       await expect(service.rotateRefreshToken("used")).rejects.toBeInstanceOf(
+        AuthRefreshReuseDetectedException,
+      );
+
+      // Sıra önemli: önce cascade revoke, sonra hata.
+      expect(refreshTokens.revokeAllForUser).toHaveBeenCalledWith("user-1");
+      expect(refreshTokens.rotate).not.toHaveBeenCalled();
+    });
+
+    it("token hem süresi geçmiş hem revoke ise doğal süre dolumu önceliklidir (AUTH_TOKEN_EXPIRED)", async () => {
+      refreshTokens.findByHash.mockResolvedValue(
+        buildRow({
+          revokedAt: new Date(),
+          expiresAt: new Date(Date.now() - 1_000),
+        }),
+      );
+
+      await expect(service.rotateRefreshToken("old")).rejects.toBeInstanceOf(
         AuthTokenExpiredException,
       );
-      expect(refreshTokens.rotate).not.toHaveBeenCalled();
+      expect(refreshTokens.revokeAllForUser).not.toHaveBeenCalled();
     });
 
     it("token süresi geçmişse AUTH_TOKEN_EXPIRED", async () => {

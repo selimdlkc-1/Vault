@@ -45,11 +45,10 @@ export class AuthInvalidCredentialsException extends DomainException {
 /**
  * `401 AUTH_TOKEN_EXPIRED` — access token'ın süresi dolduğunda (istemci refresh
  * akışını tetiklemeli) veya `POST /auth/refresh` çağrısında sunulan refresh
- * token'ı bulunamadığında / süresi geçtiğinde.
+ * token'ı bulunamadığında / doğal olarak süresi geçtiğinde.
  *
- * Faz 1 §1.4'te eklenecek "kullanılmış token replay" ayrımı bu genel koddan
- * ayrılır (`AUTH_REFRESH_REUSE_DETECTED`); bu iterasyonda revoke edilmiş bir
- * token da bu kodu alır.
+ * "Kullanılmış (revoke edilmiş) bir token'ın tekrar sunulması" (replay) bu genel
+ * koddan ayrıdır — `AuthRefreshReuseDetectedException` (Faz 1 §1.4).
  */
 export class AuthTokenExpiredException extends DomainException {
   readonly code = "AUTH_TOKEN_EXPIRED";
@@ -57,6 +56,23 @@ export class AuthTokenExpiredException extends DomainException {
 
   constructor() {
     super("Oturum süreniz doldu. Lütfen tekrar giriş yapın.");
+  }
+}
+
+/**
+ * `401 AUTH_REFRESH_REUSE_DETECTED` — `POST /auth/refresh` çağrısında zaten
+ * rotate edilmiş (revoke edilmiş) bir refresh token tekrar sunuldu. Bu bir
+ * replay saldırısı olarak yorumlanır: hata fırlatılmadan önce o kullanıcıya ait
+ * tüm aktif refresh token satırları geçersiz kılınır, kullanıcı tüm cihazlarda
+ * yeniden login olmaya zorlanır (`docs/07_SECURITY_IMPLEMENTATION.md` §2,
+ * `docs/03_API_CONTRACTS.md` §3/§5.1).
+ */
+export class AuthRefreshReuseDetectedException extends DomainException {
+  readonly code = "AUTH_REFRESH_REUSE_DETECTED";
+  readonly httpStatus = 401;
+
+  constructor() {
+    super("Oturum güvenliği nedeniyle tüm oturumlarınız sonlandırıldı. Lütfen tekrar giriş yapın.");
   }
 }
 
