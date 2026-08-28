@@ -1,11 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import type { User } from "@prisma/client";
 import type { LoginInput, RegisterInput } from "@vault/types";
+import { AuditService } from "../audit/audit.service";
 import {
   AuthInvalidCredentialsException,
   AuthTokenExpiredException,
   EmailAlreadyExistsException,
 } from "../common/exceptions/domain.exception";
+import { PrismaService } from "../prisma/prisma.service";
 import { PasswordService } from "./password.service";
 import { TokenService } from "./token.service";
 import { UsersRepository } from "./users.repository";
@@ -50,6 +52,8 @@ function toPublicUser(user: User): PublicUser {
  *
  * Faz 1 §1.2: `register` + `validateCredentials` çekirdeği.
  * Faz 1 §1.3: `login` (credential check + token issuance) ve `refresh` (rotation).
+ * Faz 2 §2.3: `LOGIN` / `LOGIN_FAILED` audit yazımı — Faz 1'de `audit_logs`
+ * tablosu henüz yokken ertelenmişti (`docs/03_API_CONTRACTS.md` §5.1 sıralama notu).
  */
 @Injectable()
 export class AuthService {
@@ -57,6 +61,11 @@ export class AuthService {
     private readonly users: UsersRepository,
     private readonly passwords: PasswordService,
     private readonly tokens: TokenService,
+    private readonly audit: AuditService,
+    // `LOGIN`/`LOGIN_FAILED` bağımsız insert'lerdir (bir state değişikliğine
+    // eşlik etmez) — `$transaction` gerekmez; `PrismaService`, `record()`'un
+    // beklediği `Prisma.TransactionClient`'ın üst kümesidir (`docs/04` §7).
+    private readonly prisma: PrismaService,
   ) {}
 
   async register(input: RegisterInput): Promise<PublicUser> {
@@ -98,9 +107,34 @@ export class AuthService {
    * Ham refresh token'ı controller `Set-Cookie` ile taşır (`docs/03` §4/§5.1).
    */
   async login(input: LoginInput): Promise<LoginResult> {
-    const user = await this.validateCredentials(input);
+    let user: PublicUser;
+    try {
+      user = await this.validateCredentials(input);
+    } catch (error) {
+      // Başarısız giriş — kullanıcı henüz doğrulanmadığından `actorId` null,
+      // email metadata'da (`docs/03_API_CONTRACTS.md` §5.1).
+      await this.audit.record(this.prisma, {
+        actorType: "user",
+        actorId: null,
+        action: "LOGIN_FAILED",
+        entityType: "user",
+        entityId: null,
+        metadata: { email: input.email },
+      });
+      throw error;
+    }
+
     const accessToken = await this.tokens.issueAccessToken(user);
     const rawRefreshToken = await this.tokens.issueRefreshToken(user.id);
+
+    await this.audit.record(this.prisma, {
+      actorType: "user",
+      actorId: user.id,
+      action: "LOGIN",
+      entityType: "user",
+      entityId: user.id,
+      metadata: null,
+    });
 
     return {
       accessToken,

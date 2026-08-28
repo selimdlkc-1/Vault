@@ -13,6 +13,7 @@ import { RolesGuard } from "../common/guards/roles.guard";
 import { ResponseEnvelopeInterceptor } from "../common/interceptors/response-envelope.interceptor";
 import type { AuthenticatedUser } from "../common/types/authenticated-user";
 import { testConfigModule } from "../config/testing-config.module";
+import { TestingPrismaModule } from "../prisma/testing-prisma.module";
 import { NetworksModule } from "./networks.module";
 import type { NetworkAssetWithAsset } from "./networks.repository";
 import { NetworksRepository } from "./networks.repository";
@@ -112,7 +113,7 @@ describe("NetworksController (integration) — /api/v1/networks", () => {
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [testConfigModule(), AuthModule, NetworksModule],
+      imports: [testConfigModule(), TestingPrismaModule, AuthModule, NetworksModule],
       providers: [
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },

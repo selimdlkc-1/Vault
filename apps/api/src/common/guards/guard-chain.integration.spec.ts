@@ -5,6 +5,7 @@ import { Test } from "@nestjs/testing";
 import request from "supertest";
 import { AuthModule } from "../../auth/auth.module";
 import { testConfigModule } from "../../config/testing-config.module";
+import { TestingPrismaModule } from "../../prisma/testing-prisma.module";
 import { RefreshTokensRepository } from "../../auth/refresh-tokens.repository";
 import { UsersRepository } from "../../auth/users.repository";
 import { CurrentUser } from "../decorators/current-user.decorator";
@@ -43,7 +44,7 @@ class ProbeController {
 }
 
 @Module({
-  imports: [testConfigModule(), AuthModule],
+  imports: [testConfigModule(), TestingPrismaModule, AuthModule],
   controllers: [ProbeController],
   providers: [
     { provide: APP_GUARD, useClass: JwtAuthGuard },

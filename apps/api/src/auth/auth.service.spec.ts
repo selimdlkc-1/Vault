@@ -1,9 +1,11 @@
 import type { User } from "@prisma/client";
+import type { AuditService } from "../audit/audit.service";
 import {
   AuthInvalidCredentialsException,
   AuthTokenExpiredException,
   EmailAlreadyExistsException,
 } from "../common/exceptions/domain.exception";
+import type { PrismaService } from "../prisma/prisma.service";
 import { AuthService } from "./auth.service";
 import type { PasswordService } from "./password.service";
 import type { TokenService } from "./token.service";
@@ -34,6 +36,8 @@ describe("AuthService", () => {
       | "revokeRefreshToken"
     >
   >;
+  let audit: jest.Mocked<Pick<AuditService, "record">>;
+  const prisma = { $transaction: jest.fn() } as unknown as PrismaService;
   let service: AuthService;
 
   beforeEach(() => {
@@ -45,10 +49,13 @@ describe("AuthService", () => {
       rotateRefreshToken: jest.fn(),
       revokeRefreshToken: jest.fn(),
     };
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
     service = new AuthService(
       users as unknown as UsersRepository,
       passwords as unknown as PasswordService,
       tokens as unknown as TokenService,
+      audit as unknown as AuditService,
+      prisma,
     );
   });
 
@@ -152,7 +159,25 @@ describe("AuthService", () => {
       });
     });
 
-    it("kimlik yanlışsa token üretmeden AuthInvalidCredentialsException fırlatır", async () => {
+    it("başarılı girişte LOGIN audit kaydı yazar (actorId = user.id)", async () => {
+      users.findByEmail.mockResolvedValue(buildUser());
+      passwords.verify.mockResolvedValue(true);
+      tokens.issueAccessToken.mockResolvedValue("access.jwt");
+      tokens.issueRefreshToken.mockResolvedValue("raw-refresh");
+
+      await service.login({ email: "user@vault.local", password: "password1" });
+
+      expect(audit.record).toHaveBeenCalledWith(prisma, {
+        actorType: "user",
+        actorId: "11111111-1111-1111-1111-111111111111",
+        action: "LOGIN",
+        entityType: "user",
+        entityId: "11111111-1111-1111-1111-111111111111",
+        metadata: null,
+      });
+    });
+
+    it("kimlik yanlışsa token üretmeden AuthInvalidCredentialsException fırlatır + LOGIN_FAILED audit (actorId null, email metadata'da)", async () => {
       users.findByEmail.mockResolvedValue(buildUser());
       passwords.verify.mockResolvedValue(false);
 
@@ -161,6 +186,14 @@ describe("AuthService", () => {
       ).rejects.toBeInstanceOf(AuthInvalidCredentialsException);
       expect(tokens.issueAccessToken).not.toHaveBeenCalled();
       expect(tokens.issueRefreshToken).not.toHaveBeenCalled();
+      expect(audit.record).toHaveBeenCalledWith(prisma, {
+        actorType: "user",
+        actorId: null,
+        action: "LOGIN_FAILED",
+        entityType: "user",
+        entityId: null,
+        metadata: { email: "user@vault.local" },
+      });
     });
   });
 

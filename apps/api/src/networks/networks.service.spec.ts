@@ -1,5 +1,7 @@
-import type { Asset, Network } from "@prisma/client";
+import type { Asset, Network, NetworkAsset } from "@prisma/client";
+import type { AuditService } from "../audit/audit.service";
 import { ResourceNotFoundException } from "../common/exceptions/domain.exception";
+import type { PrismaService } from "../prisma/prisma.service";
 import type { NetworkAssetWithAsset, NetworksRepository } from "./networks.repository";
 import { NetworksService } from "./networks.service";
 
@@ -43,10 +45,21 @@ function buildNetworkAsset(
   };
 }
 
+const TX = Symbol("tx");
+
 describe("NetworksService", () => {
   let repository: jest.Mocked<
-    Pick<NetworksRepository, "findAllNetworks" | "findNetworkById" | "findNetworkAssets">
+    Pick<
+      NetworksRepository,
+      | "findAllNetworks"
+      | "findNetworkById"
+      | "findNetworkAssets"
+      | "findNetworkAsset"
+      | "updateActivation"
+    >
   >;
+  let prisma: { $transaction: jest.Mock };
+  let audit: jest.Mocked<Pick<AuditService, "record">>;
   let service: NetworksService;
 
   beforeEach(() => {
@@ -54,8 +67,19 @@ describe("NetworksService", () => {
       findAllNetworks: jest.fn(),
       findNetworkById: jest.fn(),
       findNetworkAssets: jest.fn(),
+      findNetworkAsset: jest.fn(),
+      updateActivation: jest.fn(),
     };
-    service = new NetworksService(repository as unknown as NetworksRepository);
+    // `$transaction(cb)` → cb'yi sabit bir tx handle ile çalıştırır.
+    prisma = {
+      $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(TX)),
+    };
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
+    service = new NetworksService(
+      repository as unknown as NetworksRepository,
+      prisma as unknown as PrismaService,
+      audit as unknown as AuditService,
+    );
   });
 
   describe("listNetworks", () => {
@@ -149,6 +173,78 @@ describe("NetworksService", () => {
         expect.objectContaining({ symbol: "ETH", isActive: true }),
         expect.objectContaining({ symbol: "USDT", isActive: false }),
       ]);
+    });
+  });
+
+  describe("activateNetworkAsset", () => {
+    const ASSET_ID = "22222222-2222-4222-8222-222222222222";
+    const ADMIN_ID = "99999999-9999-4999-8999-999999999999";
+
+    function existingPair(isActive: boolean): NetworkAsset {
+      return {
+        networkId: SEPOLIA_ID,
+        assetId: ASSET_ID,
+        isActive,
+        activatedAt: isActive ? new Date("2026-08-01T00:00:00.000Z") : null,
+      };
+    }
+
+    it("çift yoksa RESOURCE_NOT_FOUND fırlatır, transaction açılmaz", async () => {
+      repository.findNetworkAsset.mockResolvedValue(null);
+
+      await expect(
+        service.activateNetworkAsset(SEPOLIA_ID, ASSET_ID, false, ADMIN_ID),
+      ).rejects.toBeInstanceOf(ResourceNotFoundException);
+      expect(prisma.$transaction).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it("pasifleştirme: tek transaction içinde update + NETWORK_ASSET_DEACTIVATED audit yazar", async () => {
+      repository.findNetworkAsset.mockResolvedValue(existingPair(true));
+      repository.updateActivation.mockResolvedValue({
+        ...existingPair(false),
+        activatedAt: new Date("2026-08-01T00:00:00.000Z"),
+      });
+
+      const result = await service.activateNetworkAsset(
+        SEPOLIA_ID,
+        ASSET_ID,
+        false,
+        ADMIN_ID,
+      );
+
+      expect(repository.updateActivation).toHaveBeenCalledWith(
+        TX,
+        SEPOLIA_ID,
+        ASSET_ID,
+        false,
+      );
+      expect(audit.record).toHaveBeenCalledWith(TX, {
+        actorType: "admin",
+        actorId: ADMIN_ID,
+        action: "NETWORK_ASSET_DEACTIVATED",
+        entityType: "network_asset",
+        entityId: null,
+        metadata: { networkId: SEPOLIA_ID, assetId: ASSET_ID },
+      });
+      expect(result).toEqual({
+        networkId: SEPOLIA_ID,
+        assetId: ASSET_ID,
+        isActive: false,
+        activatedAt: "2026-08-01T00:00:00.000Z",
+      });
+    });
+
+    it("aktifleştirme: NETWORK_ASSET_ACTIVATED audit action'ı yazılır", async () => {
+      repository.findNetworkAsset.mockResolvedValue(existingPair(false));
+      repository.updateActivation.mockResolvedValue(existingPair(true));
+
+      await service.activateNetworkAsset(SEPOLIA_ID, ASSET_ID, true, ADMIN_ID);
+
+      expect(audit.record).toHaveBeenCalledWith(
+        TX,
+        expect.objectContaining({ action: "NETWORK_ASSET_ACTIVATED" }),
+      );
     });
   });
 });

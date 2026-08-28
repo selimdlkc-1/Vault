@@ -1,15 +1,19 @@
 import { Module } from "@nestjs/common";
+import { AuditModule } from "../audit/audit.module";
+import { AdminNetworkAssetsController } from "./admin-network-assets.controller";
 import { NetworksController } from "./networks.controller";
 import { NetworksRepository } from "./networks.repository";
 import { NetworksService } from "./networks.service";
 
 /**
  * Network/Asset master data modülü (`docs/04_BACKEND_SPEC.md` §2). Ayrı bir
- * `admin/` modülü açılmaz — admin aktivasyon endpoint'i de (§2.3) bu modülün
- * parçası olacaktır. `PrismaModule` global olduğundan ayrıca import edilmez.
+ * `admin/` modülü açılmaz — admin aktivasyon endpoint'i de bu modülün parçasıdır
+ * (`AdminNetworkAssetsController`). `AuditModule` aktivasyon değişikliğinin audit
+ * yazımı için import edilir. `PrismaModule` global olduğundan ayrıca import edilmez.
  */
 @Module({
-  controllers: [NetworksController],
+  imports: [AuditModule],
+  controllers: [NetworksController, AdminNetworkAssetsController],
   providers: [NetworksService, NetworksRepository],
 })
 export class NetworksModule {}

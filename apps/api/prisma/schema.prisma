@@ -27,6 +27,14 @@ enum ChainType {
   @@map("chain_type")
 }
 
+enum ActorType {
+  user
+  admin
+  system
+
+  @@map("actor_type")
+}
+
 /// docs/02_DATABASE_SCHEMA.md §2.1
 model User {
   id           String   @id @default(uuid()) @db.Uuid
@@ -101,4 +109,26 @@ model NetworkAsset {
 
   @@id([networkId, assetId])
   @@map("network_assets")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.12 — uygulama seviyesi denetim izi.
+/// Append-only: hiçbir satır güncellenmez veya silinmez (yalnızca `created_at`).
+/// `AuditService.record()` bir `Prisma.TransactionClient` alarak çağıranın
+/// transaction'ına katılır — audit yazımı iş işleminin ayrılmaz parçasıdır
+/// (`docs/04_BACKEND_SPEC.md` §7). `entity_type`/`entity_id` kasıtlı olarak FK
+/// değildir (zayıf referans — farklı tablolara işaret edebilir).
+model AuditLog {
+  id         String    @id @default(uuid()) @db.Uuid
+  actorType  ActorType @map("actor_type")
+  actorId    String?   @map("actor_id") @db.Uuid
+  action     String
+  entityType String    @map("entity_type")
+  entityId   String?   @map("entity_id") @db.Uuid
+  metadata   Json?
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([actorType, actorId], map: "audit_logs_actor_idx")
+  @@index([entityType, entityId], map: "audit_logs_entity_idx")
+  @@index([createdAt(sort: Desc)], map: "audit_logs_created_at_idx")
+  @@map("audit_logs")
 }

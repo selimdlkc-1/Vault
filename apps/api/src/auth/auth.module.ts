@@ -2,6 +2,7 @@ import { Module } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { JwtModule } from "@nestjs/jwt";
 import { ThrottlerGuard, ThrottlerModule } from "@nestjs/throttler";
+import { AuditModule } from "../audit/audit.module";
 import type { EnvConfig } from "../config/env.schema";
 import { AuthController } from "./auth.controller";
 import { AuthService } from "./auth.service";
@@ -41,6 +42,8 @@ import { UsersRepository } from "./users.repository";
       }),
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // Faz 2 §2.3: `LOGIN`/`LOGIN_FAILED` audit yazımı için `AuditService`.
+    AuditModule,
   ],
   controllers: [AuthController],
   providers: [
