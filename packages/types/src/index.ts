@@ -2,4 +2,5 @@
 export * from "./asset-price-map";
 export * from "./schemas/auth.schema";
 export * from "./schemas/network-asset.schema";
+export * from "./schemas/portfolio.schema";
 export * from "./schemas/wallet.schema";
