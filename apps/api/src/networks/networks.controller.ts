@@ -21,10 +21,12 @@ import {
  * Network/Asset okuma endpoint'leri (`docs/03_API_CONTRACTS.md` §5.3). Base path
  * `/api/v1` `main.ts`'te global prefix ile eklenir → `GET /api/v1/networks`.
  *
- * İkisi de yalnızca kimlik doğrulaması ister; global `JwtAuthGuard` yeterli.
+ * İki `GET` yalnızca kimlik doğrulaması ister; global `JwtAuthGuard` yeterli.
  * `@Roles()` **eklenmez** — `activeOnly=false` dahil her iki endpoint `User`
- * rolüne de bilinçli olarak açıktır (`docs/03_API_CONTRACTS.md` §5.3). Admin
- * aktivasyon `PATCH`'i ayrı bir iterasyonda (§2.3) `@Roles('admin')` ile gelir.
+ * rolüne de bilinçli olarak açıktır (`docs/03_API_CONTRACTS.md` §5.3).
+ *
+ * Admin aktivasyon `PATCH`'i ayrı bir controller'dadır
+ * (`admin-network-assets.controller.ts`) çünkü path prefix'i `admin/network-assets`.
  */
 @Controller("networks")
 export class NetworksController {

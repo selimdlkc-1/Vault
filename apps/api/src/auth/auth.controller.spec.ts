@@ -4,9 +4,11 @@ import { Test } from "@nestjs/testing";
 import type { RefreshToken, User } from "@prisma/client";
 import cookieParser from "cookie-parser";
 import request from "supertest";
+import { AuditRepository, type AuditLogEntry } from "../audit/audit.repository";
 import { AllExceptionsFilter } from "../common/filters/all-exceptions.filter";
 import { ResponseEnvelopeInterceptor } from "../common/interceptors/response-envelope.interceptor";
 import { testConfigModule } from "../config/testing-config.module";
+import { TestingPrismaModule } from "../prisma/testing-prisma.module";
 import { AuthModule } from "./auth.module";
 import type { NewRefreshToken } from "./refresh-tokens.repository";
 import { RefreshTokensRepository } from "./refresh-tokens.repository";
@@ -99,6 +101,15 @@ class InMemoryRefreshTokensRepository {
   }
 }
 
+class InMemoryAuditRepository {
+  readonly rows: AuditLogEntry[] = [];
+
+  create(tx: unknown, entry: AuditLogEntry): Promise<void> {
+    this.rows.push(entry);
+    return Promise.resolve();
+  }
+}
+
 /** `Set-Cookie` başlığından `refresh_token=<değer>` çiftini çıkarır (geri gönderim için). */
 function extractRefreshCookie(setCookie: string[] | undefined): string {
   const header = (setCookie ?? []).find((c) => c.startsWith("refresh_token="));
@@ -110,15 +121,18 @@ function extractRefreshCookie(setCookie: string[] | undefined): string {
 
 describe("AuthController (integration) — /api/v1/auth", () => {
   let app: INestApplication;
+  let auditRepo: InMemoryAuditRepository;
 
   beforeEach(async () => {
     const moduleRef = await Test.createTestingModule({
-      imports: [testConfigModule(), AuthModule],
+      imports: [testConfigModule(), TestingPrismaModule, AuthModule],
     })
       .overrideProvider(UsersRepository)
       .useClass(InMemoryUsersRepository)
       .overrideProvider(RefreshTokensRepository)
       .useClass(InMemoryRefreshTokensRepository)
+      .overrideProvider(AuditRepository)
+      .useClass(InMemoryAuditRepository)
       .compile();
 
     app = moduleRef.createNestApplication();
@@ -127,6 +141,8 @@ describe("AuthController (integration) — /api/v1/auth", () => {
     app.useGlobalInterceptors(new ResponseEnvelopeInterceptor());
     app.useGlobalFilters(new AllExceptionsFilter());
     await app.init();
+
+    auditRepo = app.get(AuditRepository);
   });
 
   afterEach(async () => {
@@ -227,9 +243,19 @@ describe("AuthController (integration) — /api/v1/auth", () => {
       expect(refreshHeader).toContain("HttpOnly");
       expect(refreshHeader).toMatch(/SameSite=Strict/i);
       expect(refreshHeader).toContain("Path=/api/v1/auth");
+
+      // Faz 2 §2.3: başarılı giriş `audit_logs`'a LOGIN kaydı düşer.
+      expect(
+        auditRepo.rows.filter((r) => r.action === "LOGIN"),
+      ).toHaveLength(1);
+      expect(auditRepo.rows[0]).toMatchObject({
+        actorType: "user",
+        action: "LOGIN",
+      });
+      expect(auditRepo.rows[0].actorId).toEqual(expect.any(String));
     });
 
-    it("yanlış şifre → 401 AUTH_INVALID_CREDENTIALS, cookie yok", async () => {
+    it("yanlış şifre → 401 AUTH_INVALID_CREDENTIALS, cookie yok, LOGIN_FAILED audit", async () => {
       await registerUser();
 
       const response = await request(app.getHttpServer())
@@ -239,6 +265,17 @@ describe("AuthController (integration) — /api/v1/auth", () => {
       expect(response.status).toBe(401);
       expect(response.body.error.code).toBe("AUTH_INVALID_CREDENTIALS");
       expect(response.headers["set-cookie"]).toBeUndefined();
+
+      expect(auditRepo.rows).toEqual([
+        {
+          actorType: "user",
+          actorId: null,
+          action: "LOGIN_FAILED",
+          entityType: "user",
+          entityId: null,
+          metadata: { email: "demo@vault.local" },
+        },
+      ]);
     });
 
     it("boş şifre → 400 VALIDATION_FAILED", async () => {
@@ -399,6 +436,16 @@ describe("AuthController (integration) — /api/v1/auth", () => {
       expect(blocked.status).toBe(429);
       expect(blocked.body.error.code).toBe("RATE_LIMIT_EXCEEDED");
       expect(blocked.headers["retry-after"]).toBeDefined();
+
+      // Faz 2 §2.3 / docs/03 §6: eşik aşımı LOGIN_FAILED { reason: 'rate_limited' }.
+      expect(auditRepo.rows).toContainEqual({
+        actorType: "user",
+        actorId: null,
+        action: "LOGIN_FAILED",
+        entityType: "user",
+        entityId: null,
+        metadata: { reason: "rate_limited" },
+      });
     });
 
     it("login: aynı IP farklı email → ayrı bucket, kilitlenmez", async () => {
