@@ -21,3 +21,30 @@ export const createWatchOnlyWalletSchema = z
   .strict();
 
 export type CreateWatchOnlyWalletInput = z.infer<typeof createWatchOnlyWalletSchema>;
+
+/** Cüzdan tipi — Prisma `wallet_type` enum'ıyla birebir (`docs/02_DATABASE_SCHEMA.md` §2.5). */
+export const walletTypeSchema = z.enum(["watch_only", "managed"]);
+export type WalletTypeValue = z.infer<typeof walletTypeSchema>;
+
+/**
+ * `GET /wallets` query parametreleri — tek doğruluk kaynağı
+ * (`docs/03_API_CONTRACTS.md` §5.2, §1 offset sayfalama sözleşmesi). Aynı şema
+ * backend `ZodValidationPipe`'ında ve cüzdan listesi ekranının (Faz 3 §3.5a)
+ * sorgu anahtarında kullanılır.
+ *
+ * `page`/`pageSize` query string'den geldiği için `z.coerce.number()`; varsayılan
+ * `page=1`, `pageSize=20`, üst sınır `100`. `userId` yalnızca Admin için
+ * anlamlıdır — rol dallanması servis katmanında (`WalletsService.listWallets`).
+ * `.strict()` — tanımsız query alanı reddedilir.
+ */
+export const listWalletsQuerySchema = z
+  .object({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    networkId: z.string().uuid().optional(),
+    type: walletTypeSchema.optional(),
+    userId: z.string().uuid().optional(),
+  })
+  .strict();
+
+export type ListWalletsQuery = z.infer<typeof listWalletsQuerySchema>;

@@ -1,14 +1,25 @@
 import type { Wallet } from "@prisma/client";
 import type { AuditService } from "../audit/audit.service";
 import {
+  ForbiddenNotOwnerException,
+  ForbiddenRoleException,
   NetworkAssetInactiveException,
+  ResourceNotFoundException,
   WalletAddressAlreadyExistsException,
   WalletAddressInvalidFormatException,
 } from "../common/exceptions/domain.exception";
+import type { PriceCacheService } from "../common/price-cache.service";
 import type { NetworkView, NetworksService } from "../networks/networks.service";
 import type { PrismaService } from "../prisma/prisma.service";
-import type { WalletsRepository } from "./wallets.repository";
+import type { WalletsRepository, WalletWithBalances } from "./wallets.repository";
 import { WalletsService } from "./wallets.service";
+
+/** Fiyat cache'i stub'ı — sembol → USD string map'i. Tanımsız sembol `null`. */
+function fakePriceCache(prices: Record<string, string> = {}): PriceCacheService {
+  return {
+    get: jest.fn((symbol: string) => Promise.resolve(prices[symbol] ?? null)),
+  } as unknown as PriceCacheService;
+}
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const SEPOLIA_ID = "22222222-2222-4222-8222-222222222222";
@@ -84,6 +95,7 @@ describe("WalletsService.createWatchOnly", () => {
       networksService as unknown as NetworksService,
       prisma as unknown as PrismaService,
       audit as unknown as AuditService,
+      fakePriceCache(),
     );
   });
 
@@ -209,6 +221,7 @@ describe("WalletsService — balance-sync destek metotları", () => {
       {} as unknown as NetworksService,
       {} as unknown as PrismaService,
       {} as unknown as AuditService,
+      fakePriceCache(),
     );
   });
 
@@ -241,5 +254,172 @@ describe("WalletsService — balance-sync destek metotları", () => {
       assetId: "a1",
       balanceRaw: "1000000000000000000",
     });
+  });
+});
+
+// Faz 3 §3.4a — cüzdan okuma endpoint'lerinin rol/sahiplik dallanmaları.
+describe("WalletsService — cüzdan okuma (listWallets / getWalletById)", () => {
+  const ADMIN_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const OTHER_USER_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const WALLET_ID = "99999999-9999-4999-8999-999999999999";
+
+  function walletWithBalances(
+    overrides: Partial<WalletWithBalances> = {},
+  ): WalletWithBalances {
+    return {
+      id: WALLET_ID,
+      userId: USER_ID,
+      networkId: SEPOLIA_ID,
+      type: "watch_only",
+      address: VALID_EVM,
+      derivationIndex: null,
+      encryptedDek: null,
+      createdAt: new Date("2026-08-28T00:00:00.000Z"),
+      updatedAt: new Date("2026-08-28T00:00:00.000Z"),
+      balanceCaches: [
+        {
+          walletId: WALLET_ID,
+          assetId: "asset-eth",
+          balanceRaw: "1000000000000000000",
+          updatedAt: new Date("2026-08-28T00:00:00.000Z"),
+          asset: {
+            id: "asset-eth",
+            networkId: SEPOLIA_ID,
+            symbol: "ETH",
+            decimals: 18,
+            contractAddress: null,
+            coingeckoId: "ethereum",
+            createdAt: new Date("2026-08-01T00:00:00.000Z"),
+          },
+        },
+      ],
+      ...overrides,
+    } as WalletWithBalances;
+  }
+
+  let repository: jest.Mocked<Pick<WalletsRepository, "findByUserId" | "findById">>;
+  let service: WalletsService;
+
+  beforeEach(() => {
+    repository = {
+      findByUserId: jest.fn().mockResolvedValue({ items: [], totalItems: 0 }),
+      findById: jest.fn().mockResolvedValue(walletWithBalances()),
+    };
+    service = new WalletsService(
+      repository as unknown as WalletsRepository,
+      {} as unknown as NetworksService,
+      {} as unknown as PrismaService,
+      {} as unknown as AuditService,
+      fakePriceCache({ ETH: "2000", USDT: "1" }),
+    );
+  });
+
+  it("Admin + ?userId= → hedef kullanıcının cüzdanları sorgulanır", async () => {
+    await service.listWallets(ADMIN_ID, "admin", {
+      userId: OTHER_USER_ID,
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(repository.findByUserId).toHaveBeenCalledWith(
+      OTHER_USER_ID,
+      expect.objectContaining({ page: 1, pageSize: 20 }),
+    );
+  });
+
+  it("Admin ?userId= vermezse kendi cüzdanlarını sorgular", async () => {
+    await service.listWallets(ADMIN_ID, "admin", { page: 1, pageSize: 20 });
+
+    expect(repository.findByUserId).toHaveBeenCalledWith(
+      ADMIN_ID,
+      expect.anything(),
+    );
+  });
+
+  it("User başka bir userId denerse → FORBIDDEN_ROLE, repository çağrılmaz", async () => {
+    await expect(
+      service.listWallets(USER_ID, "user", {
+        userId: OTHER_USER_ID,
+        page: 1,
+        pageSize: 20,
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenRoleException);
+    expect(repository.findByUserId).not.toHaveBeenCalled();
+  });
+
+  it("User kendi userId'sini açıkça geçebilir (kendi kendine izin)", async () => {
+    await service.listWallets(USER_ID, "user", {
+      userId: USER_ID,
+      page: 1,
+      pageSize: 20,
+    });
+    expect(repository.findByUserId).toHaveBeenCalledWith(USER_ID, expect.anything());
+  });
+
+  it("liste: pagination meta'sını ve USDT değerlemesini doldurur", async () => {
+    repository.findByUserId.mockResolvedValue({
+      items: [walletWithBalances()],
+      totalItems: 1,
+    });
+
+    const result = await service.listWallets(USER_ID, "user", {
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(result.pagination).toEqual({
+      page: 1,
+      pageSize: 20,
+      totalItems: 1,
+      totalPages: 1,
+    });
+    expect(result.data[0].balances[0]).toEqual({
+      assetId: "asset-eth",
+      symbol: "ETH",
+      balanceRaw: "1000000000000000000",
+      valueUsdt: "2000.000000000000000000",
+    });
+  });
+
+  it("getWalletById: sahip olan User → detay + boş chainMovements", async () => {
+    const detail = await service.getWalletById(USER_ID, "user", WALLET_ID);
+
+    expect(detail.id).toBe(WALLET_ID);
+    expect(detail.chainMovements).toEqual([]);
+    expect(detail.balances[0].valueUsdt).toBe("2000.000000000000000000");
+  });
+
+  it("getWalletById: Admin başkasının cüzdanını görebilir (sahiplikten muaf)", async () => {
+    await expect(
+      service.getWalletById(ADMIN_ID, "admin", WALLET_ID),
+    ).resolves.toMatchObject({ id: WALLET_ID });
+  });
+
+  // docs/08 §4 senaryo #5.
+  it("getWalletById: sahiplik olmayan User → FORBIDDEN_NOT_OWNER", async () => {
+    await expect(
+      service.getWalletById(OTHER_USER_ID, "user", WALLET_ID),
+    ).rejects.toBeInstanceOf(ForbiddenNotOwnerException);
+  });
+
+  it("getWalletById: cüzdan yoksa → RESOURCE_NOT_FOUND", async () => {
+    repository.findById.mockResolvedValue(null);
+
+    await expect(
+      service.getWalletById(USER_ID, "user", WALLET_ID),
+    ).rejects.toBeInstanceOf(ResourceNotFoundException);
+  });
+
+  it("getWalletById: fiyat cache boşsa valueUsdt null (hata fırlatmaz)", async () => {
+    service = new WalletsService(
+      repository as unknown as WalletsRepository,
+      {} as unknown as NetworksService,
+      {} as unknown as PrismaService,
+      {} as unknown as AuditService,
+      fakePriceCache(),
+    );
+
+    const detail = await service.getWalletById(USER_ID, "user", WALLET_ID);
+    expect(detail.balances[0].valueUsdt).toBeNull();
   });
 });
