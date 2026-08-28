@@ -10,6 +10,7 @@ import { NetworksModule } from "./networks/networks.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { WalletsModule } from "./wallets/wallets.module";
 import { BalanceSyncModule } from "./workers/balance-sync/balance-sync.module";
+import { PriceSyncModule } from "./workers/price-sync/price-sync.module";
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { BalanceSyncModule } from "./workers/balance-sync/balance-sync.module";
     NetworksModule,
     WalletsModule,
     BalanceSyncModule,
+    PriceSyncModule,
   ],
   controllers: [],
   providers: [
