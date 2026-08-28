@@ -9,6 +9,7 @@ export type {
   ChainType,
   IChainProvider,
 } from "./i-chain-provider";
+export { isValidAddress } from "./address-validator";
 export { assertChainIdAllowed } from "./chain-id-allowlist";
 export { ChainIdNotAllowedException, NotImplementedException } from "./exceptions";
 export { EvmProvider, type EvmNetworkConfig } from "./evm-provider";

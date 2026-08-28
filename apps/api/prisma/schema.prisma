@@ -35,6 +35,13 @@ enum ActorType {
   @@map("actor_type")
 }
 
+enum WalletType {
+  watch_only
+  managed
+
+  @@map("wallet_type")
+}
+
 /// docs/02_DATABASE_SCHEMA.md §2.1
 model User {
   id           String   @id @default(uuid()) @db.Uuid
@@ -44,6 +51,7 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz
 
   refreshTokens RefreshToken[]
+  wallets       Wallet[]
 
   @@map("users")
 }
@@ -76,6 +84,7 @@ model Network {
 
   assets        Asset[]
   networkAssets NetworkAsset[]
+  wallets       Wallet[]
 
   @@map("networks")
 }
@@ -109,6 +118,32 @@ model NetworkAsset {
 
   @@id([networkId, assetId])
   @@map("network_assets")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.5 — kullanıcının portföyünü oluşturan cüzdanlar.
+/// Faz 3 §3.1: yalnızca `watch_only` oluşturma yolu var; `managed` cüzdan
+/// türetme + `encrypted_private_key` kolonu Faz 4 §4.1/§4.2'de eklenir.
+/// `type = 'watch_only'` iken `derivation_index` ve `encrypted_dek` `NULL`
+/// kalmalıdır — Prisma koşullu CHECK desteklemediğinden bu kural servis
+/// katmanında (`WalletsService`) zorlanır (`docs/02` §2.5 notu).
+model Wallet {
+  id              String     @id @default(uuid()) @db.Uuid
+  userId          String     @map("user_id") @db.Uuid
+  networkId       String     @map("network_id") @db.Uuid
+  type            WalletType
+  address         String
+  derivationIndex Int?       @map("derivation_index")
+  encryptedDek    String?    @map("encrypted_dek")
+  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  network Network @relation(fields: [networkId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([networkId, address])
+  @@index([userId], map: "wallets_user_id_idx")
+  @@index([networkId], map: "wallets_network_id_idx")
+  @@map("wallets")
 }
 
 /// docs/02_DATABASE_SCHEMA.md §2.12 — uygulama seviyesi denetim izi.

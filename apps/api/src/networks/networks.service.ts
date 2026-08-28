@@ -57,6 +57,39 @@ export class NetworksService {
   }
 
   /**
+   * Tek bir ağı `§5.3` yanıt şekline maplanmış olarak döner; yoksa `null`
+   * (çağıran karar verir — ör. `WalletsService` bunu `NETWORK_ASSET_INACTIVE`'e
+   * indirger, `docs/03_API_CONTRACTS.md` §5.2 hata listesi RESOURCE_NOT_FOUND
+   * içermez). `chainType`, adres format doğrulamasının hangi dala gireceğini
+   * belirler.
+   */
+  async findNetworkById(networkId: string): Promise<NetworkView | null> {
+    const network = await this.repository.findNetworkById(networkId);
+    if (!network) {
+      return null;
+    }
+    return {
+      id: network.id,
+      name: network.name,
+      chainType: network.chainType,
+      chainId: network.chainId,
+      confirmationThreshold: network.confirmationThreshold,
+    };
+  }
+
+  /**
+   * Bir ağda en az bir `(network, asset)` çifti `is_active = true` mi
+   * (`docs/01_DOMAIN_MODEL.md` §4 madde 1). Watch-only cüzdan eklenebilmesi için
+   * ağın aktif bir varlığı olmalıdır; aksi halde `NETWORK_ASSET_INACTIVE`.
+   */
+  async hasActiveAsset(networkId: string): Promise<boolean> {
+    const rows = await this.repository.findNetworkAssets(networkId, {
+      activeOnly: true,
+    });
+    return rows.length > 0;
+  }
+
+  /**
    * Bir ağın varlıklarını aktivasyon durumuyla listeler. Ağ yoksa
    * `RESOURCE_NOT_FOUND` (`docs/03_API_CONTRACTS.md` §5.3). `activeOnly`
    * varsayılan `true` — controller `ParseBoolPipe` + `DefaultValuePipe` ile geçirir.

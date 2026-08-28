@@ -22,6 +22,7 @@
     "@nestjs/platform-express": "^10.4.15",
     "@nestjs/throttler": "^6.4.0",
     "@prisma/client": "^5.22.0",
+    "@vault/chain-providers": "workspace:*",
     "@vault/types": "workspace:*",
     "argon2": "^0.45.1",
     "cookie-parser": "^1.4.7",

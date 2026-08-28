@@ -73,8 +73,25 @@ export class AllExceptionsFilter implements ExceptionFilter {
       exception instanceof Prisma.PrismaClientKnownRequestError &&
       exception.code === "P2002"
     ) {
-      // users.email üzerindeki UNIQUE ihlali — register'daki benzersizlik
-      // kontrolüyle yarış durumunda (aynı anda iki kayıt) buraya düşer.
+      // UNIQUE ihlali — servis katmanı ön kontrolüyle yarış durumunda (aynı anda
+      // iki kayıt) buraya düşer. Hangi kısıtın ihlal edildiği `meta.target`'tan
+      // (Postgres'te kısıt/kolon adı) ayırt edilir.
+      const target = Array.isArray(exception.meta?.target)
+        ? (exception.meta.target as string[]).join(",")
+        : String(exception.meta?.target ?? "");
+
+      if (target.includes("address")) {
+        // wallets_network_id_address_key → 409 WALLET_ADDRESS_ALREADY_EXISTS
+        // (`docs/04_BACKEND_SPEC.md` §6, `docs/03_API_CONTRACTS.md` §5.2).
+        return {
+          httpStatus: 409,
+          code: "WALLET_ADDRESS_ALREADY_EXISTS",
+          message: "Bu adres bu ağda zaten bir cüzdan olarak kayıtlı.",
+          details: null,
+        };
+      }
+
+      // users.email üzerindeki UNIQUE ihlali — register benzersizlik kontrolü.
       return {
         httpStatus: 409,
         code: "EMAIL_ALREADY_EXISTS",

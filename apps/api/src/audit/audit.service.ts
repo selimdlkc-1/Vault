@@ -12,7 +12,8 @@ export type AuditAction =
   | "LOGIN"
   | "LOGIN_FAILED"
   | "NETWORK_ASSET_ACTIVATED"
-  | "NETWORK_ASSET_DEACTIVATED";
+  | "NETWORK_ASSET_DEACTIVATED"
+  | "WALLET_CREATED";
 
 export type AuditRecordInput = Omit<AuditLogEntry, "action"> & {
   action: AuditAction;
