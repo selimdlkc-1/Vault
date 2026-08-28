@@ -18,6 +18,7 @@ import { testConfigModule } from "../config/testing-config.module";
 import { TestingPrismaModule } from "../prisma/testing-prisma.module";
 import { NetworksRepository } from "../networks/networks.repository";
 import type { NetworkAssetWithAsset } from "../networks/networks.repository";
+import { MovementsRepository } from "../movements/movements.repository";
 import { WalletsRepository } from "./wallets.repository";
 import { WalletsModule } from "./wallets.module";
 
@@ -204,6 +205,10 @@ describe("WalletsController (integration) — POST /api/v1/wallets/watch-only", 
       .useClass(InMemoryNetworksRepository)
       .overrideProvider(WalletsRepository)
       .useClass(InMemoryWalletsRepository)
+      // `GET /wallets/:id`'in son 5 zincir hareketi `MovementsService` üzerinden
+      // gelir (Faz 3 §3.6a); bu spec hareket akışını test etmez → boş dizi.
+      .overrideProvider(MovementsRepository)
+      .useValue({ findRecentByWallet: () => Promise.resolve([]) })
       .overrideProvider(AuditRepository)
       .useClass(InMemoryAuditRepository)
       // Fiyat cache'i: `price-sync` worker'ının yazdığı Redis'i taklit eder;

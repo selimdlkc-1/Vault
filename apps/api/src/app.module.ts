@@ -6,11 +6,13 @@ import { AuthModule } from "./auth/auth.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { validateEnv } from "./config/env.schema";
+import { MovementsModule } from "./movements/movements.module";
 import { NetworksModule } from "./networks/networks.module";
 import { PortfolioModule } from "./portfolio/portfolio.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { WalletsModule } from "./wallets/wallets.module";
 import { BalanceSyncModule } from "./workers/balance-sync/balance-sync.module";
+import { MovementIndexModule } from "./workers/movement-index/movement-index.module";
 import { PortfolioSnapshotModule } from "./workers/portfolio-snapshot/portfolio-snapshot.module";
 import { PriceSyncModule } from "./workers/price-sync/price-sync.module";
 
@@ -40,9 +42,11 @@ import { PriceSyncModule } from "./workers/price-sync/price-sync.module";
     NetworksModule,
     WalletsModule,
     PortfolioModule,
+    MovementsModule,
     BalanceSyncModule,
     PriceSyncModule,
     PortfolioSnapshotModule,
+    MovementIndexModule,
   ],
   controllers: [],
   providers: [

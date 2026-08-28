@@ -43,8 +43,9 @@ export interface ListWalletsOptions {
 /**
  * Cüzdan + varlık bazlı bakiye önbelleği (her satırın `asset`'i dahil) — cüzdan
  * okuma endpoint'lerinin ham kaynağı (Faz 3 §3.4a). `chain_movements` join'i
- * bilinçli olarak yok: tablo İterasyon 8'de eklenir, o zamana kadar servis
- * `chainMovements` alanını boş dizi döner.
+ * bilinçli olarak yok: `GET /wallets/:id`'in "son 5 hareket" alanı ayrı bir
+ * sorgudur ve `MovementsService.listRecentForWallet`'tan gelir (Faz 3 §3.6a,
+ * modül izolasyonu — `WalletsRepository` `chain_movements`'i sorgulamaz).
  */
 export type WalletWithBalances = Prisma.WalletGetPayload<{
   include: { balanceCaches: { include: { asset: true } } };

@@ -9,7 +9,10 @@ async function bootstrap() {
   // Fail-fast: env eksik/geçersizse Nest app hiç oluşturulmadan durur.
   validateEnv(process.env);
 
-  const app = await NestFactory.create(AppModule);
+  // `rawBody: true` — `POST /webhooks/alchemy` HMAC imzasını ham gövde üzerinden
+  // doğrular (`docs/03_API_CONTRACTS.md` §8). JSON body parser'ı korunur; yalnızca
+  // ham kopya ayrıca `req.rawBody`'de tutulur.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Tüm endpoint'ler `/api/v1` öneki altında (docs/03_API_CONTRACTS.md §1).
   app.setGlobalPrefix("api/v1");

@@ -11,6 +11,10 @@ import {
 } from "../common/exceptions/domain.exception";
 import { PriceCacheService } from "../common/price-cache.service";
 import { calculateUsdtValue } from "../common/usdt-conversion.util";
+import {
+  MovementsService,
+  type WalletChainMovementView,
+} from "../movements/movements.service";
 import { NetworksService } from "../networks/networks.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
@@ -53,11 +57,12 @@ export interface WalletListItemView {
 
 /**
  * `GET /wallets/:id` detay yanıtı — liste satırı + son 5 zincir hareketi
- * (`docs/03_API_CONTRACTS.md` §5.2). `chainMovements` İterasyon 8 (`chain_movements`
- * tablosu + `movement-index` worker) tamamlanana kadar her zaman boş dizidir.
+ * (`docs/03_API_CONTRACTS.md` §5.2). `chainMovements`, `MovementsService`'in
+ * `listRecentForWallet`'ından gelir (Faz 3 §3.6a / İterasyon 8); cüzdanın hiç
+ * hareketi yoksa boş dizidir.
  */
 export interface WalletDetailView extends WalletListItemView {
-  chainMovements: never[];
+  chainMovements: WalletChainMovementView[];
 }
 
 /** Offset sayfalama meta bloğu (`docs/03_API_CONTRACTS.md` §1). */
@@ -100,6 +105,9 @@ export class WalletsService {
     // Cüzdan okuma endpoint'lerinde varlık bazlı USDT değerlemesi için
     // (`docs/mimari-kararlar.md` P-014); `price-sync` worker'ının yazdığı cache.
     private readonly priceCache: PriceCacheService,
+    // `GET /wallets/:id`'in son 5 zincir hareketi (Faz 3 §3.6a) — worker
+    // repository'ye değil domain servisine bağımlıdır (`.claude/rules/10`).
+    private readonly movements: MovementsService,
   ) {}
 
   /**
@@ -214,8 +222,8 @@ export class WalletsService {
   /**
    * `GET /wallets/:id` (`docs/03_API_CONTRACTS.md` §5.2). Bulunamazsa
    * `RESOURCE_NOT_FOUND`; sahiplik olmayan `User` erişimi `FORBIDDEN_NOT_OWNER`
-   * (`Admin` muaf — salt-okunur, `docs/08` senaryo #5). `chainMovements`
-   * İterasyon 8'e kadar boş dizi (`chain_movements` tablosu henüz yok).
+   * (`Admin` muaf — salt-okunur, `docs/08` senaryo #5). `chainMovements` son 5
+   * zincir hareketidir (`MovementsService.listRecentForWallet`, Faz 3 §3.6a).
    */
   async getWalletById(
     requesterId: string,
@@ -230,10 +238,11 @@ export class WalletsService {
       throw new ForbiddenNotOwnerException();
     }
 
-    const view = await this.toListItemView(wallet);
-    // TODO(Faz 3 §3.6a / İterasyon 8): `chain_movements` tablosu eklenince son 5
-    // hareket burada doldurulur; şimdilik bilinçli olarak boş dizi.
-    return { ...view, chainMovements: [] };
+    const [view, chainMovements] = await Promise.all([
+      this.toListItemView(wallet),
+      this.movements.listRecentForWallet(wallet.id, 5),
+    ]);
+    return { ...view, chainMovements };
   }
 
   /**
