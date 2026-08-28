@@ -178,6 +178,22 @@ export class WalletAddressAlreadyExistsException extends DomainException {
   }
 }
 
+/**
+ * `401` — `POST /webhooks/alchemy` çağrısında `X-Alchemy-Signature` HMAC
+ * doğrulaması başarısız (`docs/03_API_CONTRACTS.md` §8). İmza doğrulanmadan
+ * hiçbir DB yazımı yapılmaz (`.claude/rules/03-security-baseline.md` — state
+ * değiştiren her yol korunmalı). Error taxonomy §3 webhook'ları ayrı tuttuğundan
+ * bu kod orada listelenmez; status §8'de tanımlıdır.
+ */
+export class WebhookSignatureInvalidException extends DomainException {
+  readonly code = "WEBHOOK_SIGNATURE_INVALID";
+  readonly httpStatus = 401;
+
+  constructor() {
+    super("Webhook imzası doğrulanamadı.");
+  }
+}
+
 export interface ValidationIssue {
   field: string;
   reason: string;

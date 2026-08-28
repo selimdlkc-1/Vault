@@ -9,6 +9,7 @@ import {
   WalletAddressInvalidFormatException,
 } from "../common/exceptions/domain.exception";
 import type { PriceCacheService } from "../common/price-cache.service";
+import type { MovementsService } from "../movements/movements.service";
 import type { NetworkView, NetworksService } from "../networks/networks.service";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { WalletsRepository, WalletWithBalances } from "./wallets.repository";
@@ -19,6 +20,13 @@ function fakePriceCache(prices: Record<string, string> = {}): PriceCacheService 
   return {
     get: jest.fn((symbol: string) => Promise.resolve(prices[symbol] ?? null)),
   } as unknown as PriceCacheService;
+}
+
+/** `MovementsService` stub'ı — `getWalletById` yalnızca `listRecentForWallet`'ı çağırır. */
+function fakeMovements(recent: unknown[] = []): MovementsService {
+  return {
+    listRecentForWallet: jest.fn().mockResolvedValue(recent),
+  } as unknown as MovementsService;
 }
 
 const USER_ID = "11111111-1111-4111-8111-111111111111";
@@ -96,6 +104,7 @@ describe("WalletsService.createWatchOnly", () => {
       prisma as unknown as PrismaService,
       audit as unknown as AuditService,
       fakePriceCache(),
+      fakeMovements(),
     );
   });
 
@@ -222,6 +231,7 @@ describe("WalletsService — balance-sync destek metotları", () => {
       {} as unknown as PrismaService,
       {} as unknown as AuditService,
       fakePriceCache(),
+      fakeMovements(),
     );
   });
 
@@ -311,6 +321,7 @@ describe("WalletsService — cüzdan okuma (listWallets / getWalletById)", () =>
       {} as unknown as PrismaService,
       {} as unknown as AuditService,
       fakePriceCache({ ETH: "2000", USDT: "1" }),
+      fakeMovements(),
     );
   });
 
@@ -417,6 +428,7 @@ describe("WalletsService — cüzdan okuma (listWallets / getWalletById)", () =>
       {} as unknown as PrismaService,
       {} as unknown as AuditService,
       fakePriceCache(),
+      fakeMovements(),
     );
 
     const detail = await service.getWalletById(USER_ID, "user", WALLET_ID);

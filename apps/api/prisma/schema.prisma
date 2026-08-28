@@ -7,6 +7,9 @@
 // Faz 3 §3.4b: portfolio_snapshots (portfolio-snapshot worker'ının periyodik yazdığı
 // toplam portföy değeri anlık görüntüsü — geçmiş grafiği bundan okunur, sorgu
 // anında yeniden hesaplanmaz, mimari-kararlar P-016).
+// Faz 3 §3.6a: chain_movements (movement-index worker'ının Alchemy webhook + Tron
+// polling ile indexlediği ham zincir hareket kaydı — GET /movements bu fazda
+// yalnızca bu kaynağı döner, transfers birleşimi Faz 5, mimari-kararlar W-006).
 // Diğer tablolar sonraki fazlarda eklenir.
 
 generator client {
@@ -45,6 +48,13 @@ enum WalletType {
   managed
 
   @@map("wallet_type")
+}
+
+enum MovementDirection {
+  incoming
+  outgoing
+
+  @@map("movement_direction")
 }
 
 /// docs/02_DATABASE_SCHEMA.md §2.1
@@ -105,9 +115,10 @@ model Asset {
   coingeckoId     String   @map("coingecko_id")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz
 
-  network       Network        @relation(fields: [networkId], references: [id], onDelete: Restrict, onUpdate: Cascade)
-  networkAssets NetworkAsset[]
-  balanceCaches BalanceCache[]
+  network        Network         @relation(fields: [networkId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  networkAssets  NetworkAsset[]
+  balanceCaches  BalanceCache[]
+  chainMovements ChainMovement[]
 
   @@unique([networkId, symbol])
   @@map("assets")
@@ -147,7 +158,8 @@ model Wallet {
   user    User    @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   network Network @relation(fields: [networkId], references: [id], onDelete: Restrict, onUpdate: Cascade)
 
-  balanceCaches BalanceCache[]
+  balanceCaches  BalanceCache[]
+  chainMovements ChainMovement[]
 
   @@unique([networkId, address])
   @@index([userId], map: "wallets_user_id_idx")
@@ -190,6 +202,33 @@ model PortfolioSnapshot {
 
   @@index([userId, createdAt(sort: Desc)], map: "portfolio_snapshots_user_id_created_at_idx")
   @@map("portfolio_snapshots")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.9 — `movement-index` worker'ının (Alchemy webhook
+/// EVM / TronGrid polling Tron, mimari-kararlar I-002) indexlediği ham zincir
+/// hareket kaydı; watch-only dahil tüm cüzdan tipleri için tutulur. Append-only:
+/// hiçbir satır güncellenmez veya silinmez (yalnızca `created_at`/`occurred_at`).
+/// `amount` en küçük birimde (wei/sun) BigInt string'idir — asla JS `number`
+/// (`.claude/rules/15-backend-data.md`, mimari-kararlar P-015). `(wallet_id,
+/// tx_hash, direction)` UNIQUE: aynı worker taraması / tekrar tetiklenen webhook
+/// aynı hareketi iki kez yazamaz (idempotent indexleme).
+model ChainMovement {
+  id         String            @id @default(uuid()) @db.Uuid
+  walletId   String            @map("wallet_id") @db.Uuid
+  assetId    String            @map("asset_id") @db.Uuid
+  txHash     String            @map("tx_hash")
+  direction  MovementDirection
+  amount     String
+  occurredAt DateTime          @map("occurred_at") @db.Timestamptz
+  createdAt  DateTime          @default(now()) @map("created_at") @db.Timestamptz
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  asset  Asset  @relation(fields: [assetId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@unique([walletId, txHash, direction], map: "chain_movements_wallet_id_tx_hash_direction_key")
+  @@index([walletId, occurredAt(sort: Desc)], map: "chain_movements_wallet_id_occurred_at_idx")
+  @@index([txHash], map: "chain_movements_tx_hash_idx")
+  @@map("chain_movements")
 }
 
 /// docs/02_DATABASE_SCHEMA.md §2.12 — uygulama seviyesi denetim izi.

@@ -143,6 +143,8 @@ Append-only; hiçbir satır güncellenmez veya silinmez.
 
 ### 2.9 `chain_movements`
 
+Faz 3 §3.6a'da oluşturuldu (`20260828132246_add_chain_movements`); `movement-index` worker'ı (Alchemy webhook EVM + TronGrid polling Tron, `mimari-kararlar.md` I-002) her tespit ettiği zincir hareketini buraya idempotent yazar, `GET /movements` bu tablodan okur (bu fazda `transfers` birleşimi yoktur — Faz 5).
+
 | Kolon | Tip | Null | Default | Açıklama |
 | --- | --- | --- | --- | --- |
 | `id` | UUID | ❌ | `gen_random_uuid()` | PK |
