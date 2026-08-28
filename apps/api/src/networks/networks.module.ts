@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AuditModule } from "../audit/audit.module";
 import { AdminNetworkAssetsController } from "./admin-network-assets.controller";
+import { ChainProviderFactory } from "./chain-provider.factory";
 import { NetworksController } from "./networks.controller";
 import { NetworksRepository } from "./networks.repository";
 import { NetworksService } from "./networks.service";
@@ -14,9 +15,10 @@ import { NetworksService } from "./networks.service";
 @Module({
   imports: [AuditModule],
   controllers: [NetworksController, AdminNetworkAssetsController],
-  providers: [NetworksService, NetworksRepository],
+  providers: [NetworksService, NetworksRepository, ChainProviderFactory],
   // `WalletsModule` (Faz 3 §3.1) `NetworksService`'i cüzdan eklerken ağ
   // chainType'ı + `(network, asset)` aktiflik kontrolü için enjekte eder.
-  exports: [NetworksService],
+  // `ChainProviderFactory` (Faz 3 §3.2) `balance-sync` worker'ına dışa aktarılır.
+  exports: [NetworksService, ChainProviderFactory],
 })
 export class NetworksModule {}

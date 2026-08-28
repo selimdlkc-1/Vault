@@ -43,7 +43,9 @@ export const envSchema = z.object({
   // CoinGecko public tier için boş bırakılabilir (docs/09 §7).
   COINGECKO_API_KEY: z.string().optional(),
 
-  // Sabit değer, genişletilmez: "sepolia,bsc-testnet,tron-shasta" (docs/09 §7).
+  // Sabit değer, genişletilmez: "11155111,97,shasta" — `networks.chain_id` ile
+  // birebir aynı biçim (seed + docs/02 §2.2; provider constructor'ı bu değeri
+  // `assertChainIdAllowed`'a geçirir). Genişletme değil, biçim eşleşmesi (docs/09 §7).
   CHAIN_ID_ALLOWLIST: z.string().min(1, "CHAIN_ID_ALLOWLIST boş olamaz"),
   CORS_ORIGIN: z.string().url("CORS_ORIGIN geçerli bir URL olmalı"),
 

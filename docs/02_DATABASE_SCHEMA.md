@@ -100,6 +100,8 @@ Constraint: `(network_id, address)` üzerinde `UNIQUE`. `type = 'watch_only'` ik
 
 ### 2.6 `balance_caches`
 
+Faz 3 §3.2'de oluşturuldu (`20260828113740_add_balance_caches`); `balance-sync` worker'ı her aktif `(wallet, asset)` çifti için upsert eder, UI bu tablodan okur (RPC asla sayfa yüklemesinde çağrılmaz — `mimari-kararlar.md` I-003).
+
 | Kolon | Tip | Null | Default | Açıklama |
 | --- | --- | --- | --- | --- |
 | `wallet_id` | UUID | ❌ | — | FK → `wallets.id` |

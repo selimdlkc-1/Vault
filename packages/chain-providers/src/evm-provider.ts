@@ -1,8 +1,8 @@
-import { JsonRpcProvider } from "ethers";
+import { Contract, JsonRpcProvider } from "ethers";
 
 import { assertChainIdAllowed } from "./chain-id-allowlist";
 import { NotImplementedException } from "./exceptions";
-import type { BroadcastResult, IChainProvider } from "./i-chain-provider";
+import type { AssetRef, BroadcastResult, IChainProvider } from "./i-chain-provider";
 
 /**
  * EVM ağ yapılandırması. Sepolia ve BSC Testnet aynı `EvmProvider` kodunu
@@ -15,6 +15,14 @@ export interface EvmNetworkConfig {
   readonly rpcUrl: string;
 }
 
+/**
+ * Minimal ERC-20 ABI — yalnızca `balanceOf` okuması. Transfer/allowance vb.
+ * imzalama akışı Faz 5'e aittir, bu fazda kapsam dışıdır.
+ */
+const ERC20_BALANCE_OF_ABI = [
+  "function balanceOf(address owner) view returns (uint256)",
+] as const;
+
 export class EvmProvider implements IChainProvider {
   readonly chainType = "evm" as const;
 
@@ -23,16 +31,25 @@ export class EvmProvider implements IChainProvider {
   constructor(network: EvmNetworkConfig, allowlist: readonly string[]) {
     assertChainIdAllowed(network.chainId, allowlist);
 
-    // Bu iterasyonda provider yalnızca saklanır; gerçek RPC çağrısı Faz 3 §3.2
-    // (getBalance) ve Faz 5 (broadcastTransaction) ile eklenecek.
     this.rpc = new JsonRpcProvider(network.rpcUrl);
   }
 
-  // Stub imzaları bilinçli olarak parametresizdir — arayüz sözleşmesi (daha az
-  // parametre alan bir metot atanabilir) korunur, gövde Faz 3 §3.2 / Faz 5
-  // tarafından tam imzayla doldurulacaktır.
-  getBalance(): Promise<string> {
-    throw new NotImplementedException("EvmProvider.getBalance");
+  /**
+   * `address`'in `asset` cinsinden bakiyesini en küçük birimde (wei) string
+   * olarak döner (docs/mimari-kararlar.md I-002 — EVM: RPC). Native varlık
+   * (`contractAddress === null`) için `eth_getBalance`; ERC-20 için kontratın
+   * `balanceOf` view çağrısı. Dönüş her zaman `bigint.toString()` — asla
+   * `number` (`.claude/rules/13-critical-modules.md`, P-015).
+   */
+  async getBalance(address: string, asset: AssetRef): Promise<string> {
+    if (asset.contractAddress === null) {
+      const balance = await this.rpc.getBalance(address);
+      return balance.toString();
+    }
+
+    const contract = new Contract(asset.contractAddress, ERC20_BALANCE_OF_ABI, this.rpc);
+    const balance = (await contract.balanceOf(address)) as bigint;
+    return balance.toString();
   }
 
   broadcastTransaction(): Promise<BroadcastResult> {
