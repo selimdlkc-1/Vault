@@ -132,7 +132,7 @@ Fazlar arasında paralelleştirme yapılmaz — her faz tek bir agent oturumu zi
 
 **§3.6 — Movement-index worker ve hareket geçmişi.** `chain_movements` tablosu; Alchemy webhook alıcı endpoint'i (EVM) + Tron polling worker; `GET /movements`; S-MOVEMENTS ekranı. `GET /movements` bu fazda yalnızca `source: 'chain'` döner — `transfers` tablosu henüz yoktur (Faz 5 §5.1), `source: 'system'` birleşimi ancak o fazdan sonra eklenir. Kapsamın genişliği (şema + webhook + worker + endpoint / ekran) nedeniyle backend (§3.6a) ve frontend (§3.6b) ayrı iterasyonlara bölünür.
 
-**İnsan onay noktası:** Faz 3 sonunda bir watch-only cüzdan eklenip gerçek bir Sepolia testnet adresinin bakiyesi ve hareket geçmişi doğru şekilde görüntülenebiliyor olmalı — bu, ilk gerçek testnet entegrasyon doğrulamasıdır.
+**İnsan onay noktası:** Faz 3 sonunda bir watch-only cüzdan eklenip gerçek bir Sepolia testnet adresinin bakiyesi ve hareket geçmişi doğru şekilde görüntülenebiliyor olmalı — bu, ilk gerçek testnet entegrasyon doğrulamasıdır. 🔜 Kod tamam — S-MOVEMENTS ekranı §3.6b (`feat/movements-screen`); `chain_movements` + Alchemy webhook + Tron polling + `GET /movements` §3.6a (`feat/movements-index-backend` — `049274d`); watch-only ekleme + `balance-sync`/`price-sync` gerçek veri akışı §3.1–3.5'te. Manuel tarayıcı doğrulaması (gerçek Sepolia adresi ekle → webhook hareketi `/movements`'te görünsün) kullanıcı onayında yapılır; onaylanınca bu satır ✅ olarak güncellenir.
 
 ### Faz 4 — Managed Cüzdan ve Key Storage
 
