@@ -13,7 +13,12 @@ import { NextResponse, type NextRequest } from "next/server";
  */
 const SESSION_HINT_COOKIE = "vault_session";
 const AUTH_PAGES = new Set(["/login", "/register"]);
-const PROTECTED_PREFIXES = ["/dashboard", "/admin"];
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/wallets",
+  "/movements",
+  "/admin",
+];
 
 export function middleware(request: NextRequest) {
   const hasHint = request.cookies.has(SESSION_HINT_COOKIE);
@@ -39,5 +44,12 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/admin/:path*", "/login", "/register"],
+  matcher: [
+    "/dashboard/:path*",
+    "/wallets/:path*",
+    "/movements/:path*",
+    "/admin/:path*",
+    "/login",
+    "/register",
+  ],
 };

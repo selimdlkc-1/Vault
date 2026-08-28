@@ -13,3 +13,19 @@ export const networkAssetKeys = {
   list: (networkId: string) =>
     [...networkAssetKeys.all, networkId, { activeOnly: false }] as const,
 };
+
+/** Cüzdan sorguları (`GET /wallets`, `GET /wallets/:id`). */
+export const walletKeys = {
+  all: ["wallets"] as const,
+  list: (filters: { networkId?: string; type?: string } = {}) =>
+    [...walletKeys.all, "list", filters] as const,
+  detail: (id: string) => [...walletKeys.all, "detail", id] as const,
+};
+
+/** Portföy sorguları (`GET /portfolio/summary`, `GET /portfolio/history`). */
+export const portfolioKeys = {
+  all: ["portfolio"] as const,
+  summary: () => [...portfolioKeys.all, "summary"] as const,
+  history: (range: { dateFrom: string; dateTo: string }) =>
+    [...portfolioKeys.all, "history", range] as const,
+};

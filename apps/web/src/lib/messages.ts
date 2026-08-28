@@ -35,10 +35,47 @@ export const messages = {
     logoutCancel: "Vazgeç",
   },
   dashboard: {
-    placeholderTitle: "Giriş başarılı",
-    placeholderBody:
-      "Bu geçici bir yer tutucu ekrandır. Portföy panosu Faz 3 §3.5'te eklenecek.",
     logout: "Çıkış Yap",
+    // TR metinler docs/06_SCREEN_CATALOG.md §4.2 S-DASHBOARD'dan birebir.
+    totalValueLabel: "Toplam Portföy Değeri",
+    addWallet: "Cüzdan Ekle",
+    empty: "Henüz bir cüzdanınız yok. Başlamak için bir cüzdan ekleyin.",
+    loadError: "Portföy verisi yüklenemedi.",
+    walletDistributionTitle: "Cüzdan Bazlı Varlık Dağılımı",
+    historyTitle: "Portföy Geçmişi",
+    historyEmpty: "Geçmiş grafiği için henüz yeterli veri yok.",
+    historyError: "Portföy geçmişi yüklenemedi.",
+    rangeLabels: { d7: "7 Gün", d30: "30 Gün", d90: "90 Gün" },
+  },
+  // `(authenticated)` layout nav bar (docs/05_FRONTEND_SPEC.md §2 layout hiyerarşisi).
+  // "Hareketler" linki İterasyon 9'a (S-MOVEMENTS) kadar placeholder route'a gider.
+  nav: {
+    dashboard: "Dashboard",
+    wallets: "Cüzdanlarım",
+    movements: "Hareketler",
+    notificationsAriaLabel: "Bildirimler",
+  },
+  wallets: {
+    // TR metinler docs/06_SCREEN_CATALOG.md §4.2 S-WALLET-LIST'ten birebir.
+    title: "Cüzdanlarım",
+    addWallet: "Cüzdan Ekle",
+    empty: "Henüz bir cüzdanınız yok.",
+    loadError: "Cüzdanlar yüklenemedi.",
+    typeWatchOnly: "İzleme",
+    typeManaged: "Yönetilen",
+    networkFilterLabel: "Ağ filtresi",
+    typeFilterLabel: "Tip filtresi",
+    filterAll: "Tümü",
+    columnNetwork: "Ağ",
+    columnType: "Tip",
+    columnAddress: "Adres",
+    columnValue: "Toplam Değer",
+  },
+  movements: {
+    // Geçici placeholder (İterasyon 9 — S-MOVEMENTS). Faz 1/2 placeholder disiplini.
+    placeholderTitle: "Hareketler",
+    placeholderBody:
+      "Zincir hareketleri listesi Faz 3 §3.6b'de (İterasyon 9) eklenecek.",
   },
   testnetDisclaimer: "testnet varlıkları — gösterge değerdir",
   admin: {
