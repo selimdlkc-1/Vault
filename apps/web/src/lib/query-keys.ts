@@ -22,6 +22,13 @@ export const walletKeys = {
   detail: (id: string) => [...walletKeys.all, "detail", id] as const,
 };
 
+/** Hareket geçmişi sorguları (`GET /movements`). */
+export const movementKeys = {
+  all: ["movements"] as const,
+  list: (filters: Record<string, string | number | undefined> = {}) =>
+    [...movementKeys.all, "list", filters] as const,
+};
+
 /** Portföy sorguları (`GET /portfolio/summary`, `GET /portfolio/history`). */
 export const portfolioKeys = {
   all: ["portfolio"] as const,

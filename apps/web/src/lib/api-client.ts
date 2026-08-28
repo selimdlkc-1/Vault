@@ -90,6 +90,24 @@ export function refreshAccessToken(): Promise<string> {
   return refreshInFlight;
 }
 
+/** Offset sayfalama meta bloğu (`docs/03_API_CONTRACTS.md` §1). */
+export interface PaginationMeta {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+/**
+ * Sayfalı liste yanıtı — `pagination` bloğu envelope'ta `data`'nın yanında üst
+ * düzeyde döner (`docs/03_API_CONTRACTS.md` §1–2). `apiClient.get` yalnızca `data`
+ * alanını döndürdüğü için sayfalı uçlar `apiClient.getPaginated` üzerinden geçer.
+ */
+export interface Paginated<T> {
+  data: T[];
+  pagination: PaginationMeta;
+}
+
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
@@ -97,10 +115,18 @@ interface RequestOptions {
   withAuth?: boolean;
   /** Dahili: 401 sonrası tek tekrar denemeyi sınırlamak için. */
   _isRetry?: boolean;
+  /** Dahili: `data` yerine tüm envelope'u (`{ data, pagination }`) döndür. */
+  _fullEnvelope?: boolean;
 }
 
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, withAuth = true, _isRetry = false } = options;
+  const {
+    method = "GET",
+    body,
+    withAuth = true,
+    _isRetry = false,
+    _fullEnvelope = false,
+  } = options;
 
   const headers: Record<string, string> = {
     "X-Requested-With": "XMLHttpRequest",
@@ -129,7 +155,7 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     | null;
 
   if (res.ok) {
-    return parsed?.data as T;
+    return (_fullEnvelope ? parsed : parsed?.data) as T;
   }
 
   const code = parsed?.error?.code ?? "INTERNAL_ERROR";
@@ -163,6 +189,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
 export const apiClient = {
   request,
   get: <T>(path: string) => request<T>(path),
+  /** Sayfalı liste uçları için — `{ data, pagination }` döner (`§5.5` movements). */
+  getPaginated: <T>(path: string) =>
+    request<Paginated<T>>(path, { _fullEnvelope: true }),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: "POST", body }),
 };

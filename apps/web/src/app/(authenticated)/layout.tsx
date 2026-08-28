@@ -14,9 +14,9 @@ import { messages } from "@/lib/messages";
  * kapısı burasıdır: `AuthContext` bootstrap'i (sessiz refresh) `unauthenticated`
  * derse `/login`'e yönlendirir. `middleware.ts` yalnızca ilk isteği hızlandırır.
  *
- * Nav bar Faz 3 §3.5a'da eklendi. "Hareketler" linki İterasyon 9'a (S-MOVEMENTS)
- * kadar geçici bir placeholder route'a gider (Faz 1/2 placeholder disiplini);
- * bildirim ikonu Faz 6 §6.1'e kadar pasif/statiktir.
+ * Nav bar Faz 3 §3.5a'da eklendi; "Hareketler" linki §3.6b'de (İterasyon 9)
+ * gerçek S-MOVEMENTS ekranına bağlandı. Bildirim ikonu Faz 6 §6.1'e kadar
+ * pasif/statiktir.
  */
 const NAV = [
   { href: "/dashboard", label: messages.nav.dashboard },

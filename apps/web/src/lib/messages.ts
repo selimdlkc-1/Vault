@@ -10,6 +10,8 @@ export const messages = {
     genericError: "Bir şeyler ters gitti. Lütfen tekrar deneyin.",
     retry: "Tekrar Dene",
     loading: "Yükleniyor...",
+    copy: "Kopyala",
+    copied: "Kopyalandı",
   },
   auth: {
     loginTitle: "Giriş Yap",
@@ -48,7 +50,6 @@ export const messages = {
     rangeLabels: { d7: "7 Gün", d30: "30 Gün", d90: "90 Gün" },
   },
   // `(authenticated)` layout nav bar (docs/05_FRONTEND_SPEC.md §2 layout hiyerarşisi).
-  // "Hareketler" linki İterasyon 9'a (S-MOVEMENTS) kadar placeholder route'a gider.
   nav: {
     dashboard: "Dashboard",
     wallets: "Cüzdanlarım",
@@ -105,10 +106,43 @@ export const messages = {
       "Yönetilen cüzdan oluşturma Faz 4'te eklenecek. Şimdilik yalnızca izleme cüzdanı eklenebilir.",
   },
   movements: {
-    // Geçici placeholder (İterasyon 9 — S-MOVEMENTS). Faz 1/2 placeholder disiplini.
-    placeholderTitle: "Hareketler",
-    placeholderBody:
-      "Zincir hareketleri listesi Faz 3 §3.6b'de (İterasyon 9) eklenecek.",
+    // TR metinler docs/06_SCREEN_CATALOG.md §4.3 S-MOVEMENTS'ten birebir.
+    title: "Hareketler",
+    // Filtre alanları (docs/06 §4.3 alan listesi).
+    filterWalletLabel: "Cüzdan",
+    filterNetworkLabel: "Ağ",
+    filterAssetLabel: "Varlık",
+    filterDirectionLabel: "Yön",
+    filterDateFromLabel: "Başlangıç",
+    filterDateToLabel: "Bitiş",
+    filterStateLabel: "Durum",
+    filterAll: "Tümü",
+    filterAssetNetworkFirst: "Önce ağ seçin",
+    directionIncoming: "Gelen",
+    directionOutgoing: "Giden",
+    // Tablo başlıkları.
+    columnDate: "Tarih",
+    columnDirection: "Yön",
+    columnAsset: "Varlık",
+    columnAmount: "Miktar",
+    columnValue: "USDT Karşılığı",
+    columnTx: "İşlem",
+    columnSource: "Kaynak",
+    // Kaynak badge'leri (Faz 3'te her zaman "Zincir Hareketi").
+    sourceChain: "Zincir Hareketi",
+    sourceSystem: "Sistem Transferi",
+    // Boş durum — iki farklı mesaj, karıştırılmaz (docs/06 §6).
+    dateRangeError: "Bitiş tarihi, başlangıç tarihinden önce olamaz.",
+    emptyNoFilter: "Henüz bir hareket yok.",
+    emptyFiltered: "Bu filtrelerle eşleşen hareket bulunamadı.",
+    clearFilters: "Filtreleri Temizle",
+    loadError: "Hareket geçmişi yüklenemedi.",
+    // Sayfalama.
+    prevPage: "Önceki",
+    nextPage: "Sonraki",
+    /** Sayfa göstergesi — bileşende `${pageWord} ${page} / ${total}` olarak birleştirilir. */
+    pageWord: "Sayfa",
+    explorerLinkAria: "Blok gezgininde aç",
   },
   testnetDisclaimer: "testnet varlıkları — gösterge değerdir",
   admin: {

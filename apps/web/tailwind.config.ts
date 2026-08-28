@@ -19,6 +19,10 @@ const config: Config = {
           DEFAULT: "#dc2626",
           foreground: "#ffffff",
         },
+        success: {
+          DEFAULT: "#16a34a",
+          foreground: "#ffffff",
+        },
         muted: {
           DEFAULT: "#f4f4f5",
           foreground: "#71717a",
