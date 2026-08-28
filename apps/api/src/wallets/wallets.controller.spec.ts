@@ -13,6 +13,7 @@ import { AllExceptionsFilter } from "../common/filters/all-exceptions.filter";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { ResponseEnvelopeInterceptor } from "../common/interceptors/response-envelope.interceptor";
+import { PRICE_CACHE_REDIS, PriceCacheService } from "../common/price-cache.service";
 import { testConfigModule } from "../config/testing-config.module";
 import { TestingPrismaModule } from "../prisma/testing-prisma.module";
 import { NetworksRepository } from "../networks/networks.repository";
@@ -84,8 +85,26 @@ class InMemoryNetworksRepository {
   }
 }
 
+type WalletRowWithBalances = Wallet & {
+  balanceCaches: {
+    walletId: string;
+    assetId: string;
+    balanceRaw: string;
+    updatedAt: Date;
+    asset: {
+      id: string;
+      networkId: string;
+      symbol: string;
+      decimals: number;
+      contractAddress: string | null;
+      coingeckoId: string;
+      createdAt: Date;
+    };
+  }[];
+};
+
 class InMemoryWalletsRepository {
-  readonly rows: Wallet[] = [];
+  readonly rows: WalletRowWithBalances[] = [];
 
   findByNetworkAndAddress(
     networkId: string,
@@ -102,7 +121,7 @@ class InMemoryWalletsRepository {
     tx: unknown,
     data: { userId: string; networkId: string; type: Wallet["type"]; address: string },
   ): Promise<Wallet> {
-    const row: Wallet = {
+    const row: WalletRowWithBalances = {
       id: randomUUID(),
       userId: data.userId,
       networkId: data.networkId,
@@ -112,9 +131,48 @@ class InMemoryWalletsRepository {
       encryptedDek: null,
       createdAt: new Date("2026-08-28T00:00:00.000Z"),
       updatedAt: new Date("2026-08-28T00:00:00.000Z"),
+      balanceCaches: [
+        {
+          walletId: "",
+          assetId: "asset-eth",
+          balanceRaw: "1000000000000000000",
+          updatedAt: new Date("2026-08-28T00:00:00.000Z"),
+          asset: {
+            id: "asset-eth",
+            networkId: data.networkId,
+            symbol: "ETH",
+            decimals: 18,
+            contractAddress: null,
+            coingeckoId: "ethereum",
+            createdAt: new Date("2026-08-01T00:00:00.000Z"),
+          },
+        },
+      ],
     };
+    row.balanceCaches[0].walletId = row.id;
     this.rows.push(row);
     return Promise.resolve(row);
+  }
+
+  findByUserId(
+    userId: string,
+    options: { page: number; pageSize: number; networkId?: string; type?: Wallet["type"] },
+  ): Promise<{ items: WalletRowWithBalances[]; totalItems: number }> {
+    const filtered = this.rows.filter(
+      (r) =>
+        r.userId === userId &&
+        (options.networkId ? r.networkId === options.networkId : true) &&
+        (options.type ? r.type === options.type : true),
+    );
+    const start = (options.page - 1) * options.pageSize;
+    return Promise.resolve({
+      items: filtered.slice(start, start + options.pageSize),
+      totalItems: filtered.length,
+    });
+  }
+
+  findById(walletId: string): Promise<WalletRowWithBalances | null> {
+    return Promise.resolve(this.rows.find((r) => r.id === walletId) ?? null);
   }
 }
 
@@ -148,6 +206,16 @@ describe("WalletsController (integration) — POST /api/v1/wallets/watch-only", 
       .useClass(InMemoryWalletsRepository)
       .overrideProvider(AuditRepository)
       .useClass(InMemoryAuditRepository)
+      // Fiyat cache'i: `price-sync` worker'ının yazdığı Redis'i taklit eder;
+      // ETH ve USDT fiyatları sabit → deterministik `valueUsdt`.
+      .overrideProvider(PriceCacheService)
+      .useValue({
+        get: (symbol: string) =>
+          Promise.resolve({ ETH: "2000", USDT: "1" }[symbol] ?? null),
+      })
+      // Gerçek ioredis bağlantısı açılmasın (testte açık handle bırakır).
+      .overrideProvider(PRICE_CACHE_REDIS)
+      .useValue({ get: async () => null, set: async () => undefined })
       .overrideProvider(UsersRepository)
       .useValue({})
       .overrideProvider(RefreshTokensRepository)
@@ -263,5 +331,145 @@ describe("WalletsController (integration) — POST /api/v1/wallets/watch-only", 
     const res = await post({ networkId: "not-a-uuid", address: VALID_EVM });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  // --- Faz 3 §3.4a: GET /wallets, GET /wallets/:id ---
+
+  const OTHER_USER_ID = "ffffffff-ffff-4fff-8fff-ffffffffffff";
+
+  function otherUserToken(): string {
+    return jwt.sign({ sub: OTHER_USER_ID, role: "user" });
+  }
+
+  function adminToken(): string {
+    return jwt.sign({ sub: "0a0a0a0a-0a0a-4a0a-8a0a-0a0a0a0a0a0a", role: "admin" });
+  }
+
+  async function createWallet(): Promise<string> {
+    const res = await post({ networkId: SEPOLIA_ID, address: VALID_EVM });
+    expect(res.status).toBe(201);
+    return res.body.data.id as string;
+  }
+
+  it("GET /wallets → 200, yalnızca kendi cüzdanları + USDT değerlemesi + pagination", async () => {
+    await createWallet();
+
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/wallets")
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.pagination).toEqual({
+      page: 1,
+      pageSize: 20,
+      totalItems: 1,
+      totalPages: 1,
+    });
+    expect(res.body.data[0]).toMatchObject({
+      networkId: SEPOLIA_ID,
+      type: "watch_only",
+      address: VALID_EVM,
+      balances: [
+        {
+          assetId: "asset-eth",
+          symbol: "ETH",
+          balanceRaw: "1000000000000000000",
+          valueUsdt: "2000.000000000000000000",
+        },
+      ],
+    });
+  });
+
+  it("GET /wallets → başka kullanıcının cüzdanı görünmez", async () => {
+    await createWallet();
+
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/wallets")
+      .set("Authorization", `Bearer ${otherUserToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(0);
+  });
+
+  it("GET /wallets?userId= → User başkasını denerse 403 FORBIDDEN_ROLE", async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/wallets?userId=${OTHER_USER_ID}`)
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN_ROLE");
+  });
+
+  it("GET /wallets?userId= → Admin başka kullanıcının cüzdanlarını görebilir", async () => {
+    await createWallet();
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/wallets?userId=${userId}`)
+      .set("Authorization", `Bearer ${adminToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toHaveLength(1);
+  });
+
+  it("GET /wallets?pageSize=999 → 400 VALIDATION_FAILED (üst sınır 100)", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/wallets?pageSize=999")
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("GET /wallets/:id → 200, sahip olan kullanıcı, boş chainMovements", async () => {
+    const walletId = await createWallet();
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/wallets/${walletId}`)
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ id: walletId, chainMovements: [] });
+    expect(res.body.data.balances[0].valueUsdt).toBe("2000.000000000000000000");
+  });
+
+  // docs/08 §4 senaryo #5.
+  it("GET /wallets/:id → sahiplik olmayan kullanıcı 403 FORBIDDEN_NOT_OWNER", async () => {
+    const walletId = await createWallet();
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/wallets/${walletId}`)
+      .set("Authorization", `Bearer ${otherUserToken()}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN_NOT_OWNER");
+  });
+
+  it("GET /wallets/:id → Admin başkasının cüzdanını görebilir (salt-okunur)", async () => {
+    const walletId = await createWallet();
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/wallets/${walletId}`)
+      .set("Authorization", `Bearer ${adminToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.id).toBe(walletId);
+  });
+
+  it("GET /wallets/:id → bilinmeyen id 404 RESOURCE_NOT_FOUND", async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/wallets/${UNKNOWN_ID}`)
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("RESOURCE_NOT_FOUND");
+  });
+
+  it("GET /wallets/:id → biçimsiz id 404 RESOURCE_NOT_FOUND", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/wallets/not-a-uuid")
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("RESOURCE_NOT_FOUND");
   });
 });

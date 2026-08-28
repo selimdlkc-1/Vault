@@ -1,5 +1,6 @@
 import { Module } from "@nestjs/common";
 import { AuditModule } from "../audit/audit.module";
+import { PriceCacheModule } from "../common/price-cache.module";
 import { NetworksModule } from "../networks/networks.module";
 import { WalletsController } from "./wallets.controller";
 import { WalletsRepository } from "./wallets.repository";
@@ -11,10 +12,11 @@ import { WalletsService } from "./wallets.service";
  * kontrolü. `PrismaModule` global olduğundan ayrıca import edilmez.
  * `WalletsService` dışa aktarılır — `balance-sync` worker'ı (Faz 3 §3.2) aktif
  * çiftleri okumak ve `balance_caches`'e yazmak için onu enjekte eder (worker
- * repository'ye doğrudan erişmez). `GET /wallets` İterasyon 4'te eklenir.
+ * repository'ye doğrudan erişmez). `PriceCacheModule` → cüzdan okuma
+ * endpoint'lerinde varlık bazlı USDT değerlemesi (Faz 3 §3.4a, P-014).
  */
 @Module({
-  imports: [AuditModule, NetworksModule],
+  imports: [AuditModule, NetworksModule, PriceCacheModule],
   controllers: [WalletsController],
   providers: [WalletsService, WalletsRepository],
   exports: [WalletsService],

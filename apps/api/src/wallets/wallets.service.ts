@@ -1,11 +1,16 @@
 import { Injectable } from "@nestjs/common";
-import type { WalletType } from "@prisma/client";
+import type { UserRole, WalletType } from "@prisma/client";
 import { isValidAddress } from "@vault/chain-providers";
 import {
+  ForbiddenNotOwnerException,
+  ForbiddenRoleException,
   NetworkAssetInactiveException,
+  ResourceNotFoundException,
   WalletAddressAlreadyExistsException,
   WalletAddressInvalidFormatException,
 } from "../common/exceptions/domain.exception";
+import { PriceCacheService } from "../common/price-cache.service";
+import { calculateUsdtValue } from "../common/usdt-conversion.util";
 import { NetworksService } from "../networks/networks.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
@@ -13,6 +18,7 @@ import {
   WalletsRepository,
   type ActiveWalletAssetPair,
   type UpsertBalanceCacheData,
+  type WalletWithBalances,
 } from "./wallets.repository";
 
 /** `POST /wallets/watch-only` yanıtı — oluşturulan cüzdan (`docs/03_API_CONTRACTS.md` §5.2). */
@@ -23,6 +29,58 @@ export interface WalletView {
   type: WalletType;
   address: string;
   createdAt: string;
+}
+
+/** `GET /wallets` yanıtındaki varlık bazlı bakiye satırı (`docs/03_API_CONTRACTS.md` §5.2). */
+export interface WalletBalanceView {
+  assetId: string;
+  symbol: string;
+  /** En küçük birimde (wei/sun) bakiye — `BigInt` string, asla JS `number`. */
+  balanceRaw: string;
+  /** USDT karşılığı (18 ondalıklı decimal string) veya fiyat cache'te yoksa `null` (UI'da "—"). */
+  valueUsdt: string | null;
+}
+
+/** `GET /wallets` liste satırı (`docs/03_API_CONTRACTS.md` §5.2). */
+export interface WalletListItemView {
+  id: string;
+  type: WalletType;
+  networkId: string;
+  address: string;
+  createdAt: string;
+  balances: WalletBalanceView[];
+}
+
+/**
+ * `GET /wallets/:id` detay yanıtı — liste satırı + son 5 zincir hareketi
+ * (`docs/03_API_CONTRACTS.md` §5.2). `chainMovements` İterasyon 8 (`chain_movements`
+ * tablosu + `movement-index` worker) tamamlanana kadar her zaman boş dizidir.
+ */
+export interface WalletDetailView extends WalletListItemView {
+  chainMovements: never[];
+}
+
+/** Offset sayfalama meta bloğu (`docs/03_API_CONTRACTS.md` §1). */
+export interface PaginationMeta {
+  page: number;
+  pageSize: number;
+  totalItems: number;
+  totalPages: number;
+}
+
+/** `GET /wallets` servis çıktısı — controller bunu response envelope'una sarar. */
+export interface WalletListResult {
+  data: WalletListItemView[];
+  pagination: PaginationMeta;
+}
+
+/** `GET /wallets` filtre girdisi (rol dallanması `userId` üzerinden). */
+export interface ListWalletsInput {
+  userId?: string;
+  page: number;
+  pageSize: number;
+  networkId?: string;
+  type?: WalletType;
 }
 
 /**
@@ -39,6 +97,9 @@ export class WalletsService {
     // `audit_logs` yazımı tek atomik blokta (`docs/04_BACKEND_SPEC.md` §7).
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    // Cüzdan okuma endpoint'lerinde varlık bazlı USDT değerlemesi için
+    // (`docs/mimari-kararlar.md` P-014); `price-sync` worker'ının yazdığı cache.
+    private readonly priceCache: PriceCacheService,
   ) {}
 
   /**
@@ -106,6 +167,124 @@ export class WalletsService {
       type: wallet.type,
       address: wallet.address,
       createdAt: wallet.createdAt.toISOString(),
+    };
+  }
+
+  /**
+   * `GET /wallets` (`docs/03_API_CONTRACTS.md` §5.2). Rol dallanması:
+   * - `Admin` + `?userId=` → o kullanıcının cüzdanları (salt-okunur); `?userId=`
+   *   yoksa Admin'in kendi cüzdanları.
+   * - `User` → yalnızca kendi cüzdanları; başka bir `userId` denerse
+   *   `FORBIDDEN_ROLE` (`docs/04_BACKEND_SPEC.md` §4 adım 6 — Admin muaf).
+   *
+   * Her cüzdanın `balances` listesi `calculateUsdtValue` ile zenginleştirilir;
+   * fiyat cache'te yoksa `valueUsdt: null` döner (hata fırlatılmaz).
+   */
+  async listWallets(
+    requesterId: string,
+    requesterRole: UserRole,
+    input: ListWalletsInput,
+  ): Promise<WalletListResult> {
+    const targetUserId = this.resolveTargetUserId(
+      requesterId,
+      requesterRole,
+      input.userId,
+    );
+
+    const { items, totalItems } = await this.repository.findByUserId(targetUserId, {
+      page: input.page,
+      pageSize: input.pageSize,
+      networkId: input.networkId,
+      type: input.type,
+    });
+
+    const data = await Promise.all(items.map((wallet) => this.toListItemView(wallet)));
+
+    return {
+      data,
+      pagination: {
+        page: input.page,
+        pageSize: input.pageSize,
+        totalItems,
+        totalPages: Math.ceil(totalItems / input.pageSize),
+      },
+    };
+  }
+
+  /**
+   * `GET /wallets/:id` (`docs/03_API_CONTRACTS.md` §5.2). Bulunamazsa
+   * `RESOURCE_NOT_FOUND`; sahiplik olmayan `User` erişimi `FORBIDDEN_NOT_OWNER`
+   * (`Admin` muaf — salt-okunur, `docs/08` senaryo #5). `chainMovements`
+   * İterasyon 8'e kadar boş dizi (`chain_movements` tablosu henüz yok).
+   */
+  async getWalletById(
+    requesterId: string,
+    requesterRole: UserRole,
+    walletId: string,
+  ): Promise<WalletDetailView> {
+    const wallet = await this.repository.findById(walletId);
+    if (!wallet) {
+      throw new ResourceNotFoundException("Cüzdan bulunamadı.");
+    }
+    if (requesterRole !== "admin" && wallet.userId !== requesterId) {
+      throw new ForbiddenNotOwnerException();
+    }
+
+    const view = await this.toListItemView(wallet);
+    // TODO(Faz 3 §3.6a / İterasyon 8): `chain_movements` tablosu eklenince son 5
+    // hareket burada doldurulur; şimdilik bilinçli olarak boş dizi.
+    return { ...view, chainMovements: [] };
+  }
+
+  /**
+   * `?userId=` ile istenen hedef kullanıcıyı role göre çözer. `Admin` herhangi
+   * bir kullanıcıyı (veya belirtmezse kendini) görebilir; `User` yalnızca
+   * kendini — başka bir `userId` `FORBIDDEN_ROLE`.
+   */
+  private resolveTargetUserId(
+    requesterId: string,
+    requesterRole: UserRole,
+    requestedUserId: string | undefined,
+  ): string {
+    if (requesterRole === "admin") {
+      return requestedUserId ?? requesterId;
+    }
+    if (requestedUserId && requestedUserId !== requesterId) {
+      throw new ForbiddenRoleException();
+    }
+    return requesterId;
+  }
+
+  /**
+   * Bir `WalletWithBalances` satırını `§5.2` liste şekline mapler; her varlık
+   * bakiyesinin USDT karşılığını `calculateUsdtValue` ile hesaplar. Bakiyeler
+   * sembol'e göre deterministik sıralanır.
+   */
+  private async toListItemView(
+    wallet: WalletWithBalances,
+  ): Promise<WalletListItemView> {
+    const balances = await Promise.all(
+      wallet.balanceCaches.map(async (cache) => ({
+        assetId: cache.assetId,
+        symbol: cache.asset.symbol,
+        balanceRaw: cache.balanceRaw,
+        valueUsdt: await calculateUsdtValue(
+          cache.balanceRaw,
+          cache.asset.decimals,
+          cache.asset.symbol,
+          this.priceCache,
+        ),
+      })),
+    );
+    balances.sort((a, b) => a.symbol.localeCompare(b.symbol));
+
+    return {
+      id: wallet.id,
+      type: wallet.type,
+      networkId: wallet.networkId,
+      address: wallet.address,
+      createdAt: wallet.createdAt.toISOString(),
+      balances,
     };
   }
 

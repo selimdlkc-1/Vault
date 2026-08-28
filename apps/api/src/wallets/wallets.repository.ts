@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { ChainType, Prisma, Wallet } from "@prisma/client";
+import type { ChainType, Prisma, Wallet, WalletType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 /** `wallets` insert girdisi — watch-only akışı (Faz 3 §3.1). */
@@ -32,6 +32,24 @@ export interface UpsertBalanceCacheData {
   balanceRaw: string;
 }
 
+/** `GET /wallets` liste filtreleri (`docs/03_API_CONTRACTS.md` §5.2). */
+export interface ListWalletsOptions {
+  page: number;
+  pageSize: number;
+  networkId?: string;
+  type?: WalletType;
+}
+
+/**
+ * Cüzdan + varlık bazlı bakiye önbelleği (her satırın `asset`'i dahil) — cüzdan
+ * okuma endpoint'lerinin ham kaynağı (Faz 3 §3.4a). `chain_movements` join'i
+ * bilinçli olarak yok: tablo İterasyon 8'de eklenir, o zamana kadar servis
+ * `chainMovements` alanını boş dizi döner.
+ */
+export type WalletWithBalances = Prisma.WalletGetPayload<{
+  include: { balanceCaches: { include: { asset: true } } };
+}>;
+
 /**
  * `wallets` tablosuna erişim (`docs/04_BACKEND_SPEC.md` §1 repository katmanı —
  * yalnızca Prisma çağrısı, iş kuralı yok). Yalnızca `WalletsModule` içindeki
@@ -40,6 +58,49 @@ export interface UpsertBalanceCacheData {
 @Injectable()
 export class WalletsRepository {
   constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Bir kullanıcının cüzdanları, offset sayfalama + opsiyonel `(networkId, type)`
+   * filtresiyle (`docs/03_API_CONTRACTS.md` §5.2). Toplam sayı aynı `where` ile
+   * tek `$transaction` içinde alınır (tutarlı sayfalama). Her cüzdan varlık
+   * bazlı `balance_caches` satırlarıyla birlikte döner. İş kuralı yok — sahiplik
+   * / rol dallanması servis katmanında.
+   */
+  async findByUserId(
+    userId: string,
+    options: ListWalletsOptions,
+  ): Promise<{ items: WalletWithBalances[]; totalItems: number }> {
+    const where: Prisma.WalletWhereInput = {
+      userId,
+      ...(options.networkId ? { networkId: options.networkId } : {}),
+      ...(options.type ? { type: options.type } : {}),
+    };
+
+    const [items, totalItems] = await this.prisma.$transaction([
+      this.prisma.wallet.findMany({
+        where,
+        include: { balanceCaches: { include: { asset: true } } },
+        orderBy: { createdAt: "desc" },
+        skip: (options.page - 1) * options.pageSize,
+        take: options.pageSize,
+      }),
+      this.prisma.wallet.count({ where }),
+    ]);
+
+    return { items, totalItems };
+  }
+
+  /**
+   * Tek bir cüzdan, varlık bazlı `balance_caches` satırlarıyla (Faz 3 §3.4a).
+   * Bulunamazsa `null` — çağıran (`WalletsService`) `RESOURCE_NOT_FOUND`'a
+   * indirger. Sahiplik kontrolü burada yapılmaz.
+   */
+  findById(walletId: string): Promise<WalletWithBalances | null> {
+    return this.prisma.wallet.findUnique({
+      where: { id: walletId },
+      include: { balanceCaches: { include: { asset: true } } },
+    });
+  }
 
   /**
    * `(network, address)` benzersizlik ön kontrolü — deterministik `409`

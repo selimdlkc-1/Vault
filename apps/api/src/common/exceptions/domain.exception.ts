@@ -106,6 +106,21 @@ export class ForbiddenRoleException extends DomainException {
 }
 
 /**
+ * `403 FORBIDDEN_NOT_OWNER` — kaynak (cüzdan/transfer) isteği yapan kullanıcıya
+ * ait değil (`docs/03_API_CONTRACTS.md` §3, `docs/04_BACKEND_SPEC.md` §4 adım 6).
+ * `Admin` bu kontrolden muaftır (salt-okunur erişim); kontrol servis katmanında
+ * yapılır. `docs/08_TESTING_STRATEGY.md` §4 senaryo #5.
+ */
+export class ForbiddenNotOwnerException extends DomainException {
+  readonly code = "FORBIDDEN_NOT_OWNER";
+  readonly httpStatus = 403;
+
+  constructor() {
+    super("Bu kayıt size ait değil.");
+  }
+}
+
+/**
  * `404 RESOURCE_NOT_FOUND` — belirtilen id ile eşleşen kayıt yok
  * (`docs/03_API_CONTRACTS.md` §3). Biçimsiz bir path id'si de (ör. UUID
  * olmayan `:networkId`) bu koda indirgenir — istemci açısından "yok" ile
