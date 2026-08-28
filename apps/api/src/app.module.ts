@@ -1,5 +1,6 @@
+import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
-import { ConfigModule } from "@nestjs/config";
+import { ConfigModule, ConfigService } from "@nestjs/config";
 import { APP_GUARD } from "@nestjs/core";
 import { AuthModule } from "./auth/auth.module";
 import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
@@ -8,6 +9,7 @@ import { validateEnv } from "./config/env.schema";
 import { NetworksModule } from "./networks/networks.module";
 import { PrismaModule } from "./prisma/prisma.module";
 import { WalletsModule } from "./wallets/wallets.module";
+import { BalanceSyncModule } from "./workers/balance-sync/balance-sync.module";
 
 @Module({
   imports: [
@@ -21,10 +23,20 @@ import { WalletsModule } from "./wallets/wallets.module";
       validate: (raw: Record<string, unknown>) =>
         validateEnv(raw as Record<string, string | undefined>),
     }),
+    // BullMQ bağlantısı bir kez burada tanımlanır (docs/04_BACKEND_SPEC.md §8 —
+    // tüm arka plan işleri BullMQ üzerinde; cron kullanılmaz). Her kuyruk kendi
+    // alt-modülünde `BullModule.registerQueue()` ile eklenir.
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: { url: config.getOrThrow<string>("REDIS_URL") },
+      }),
+    }),
     PrismaModule,
     AuthModule,
     NetworksModule,
     WalletsModule,
+    BalanceSyncModule,
   ],
   controllers: [],
   providers: [

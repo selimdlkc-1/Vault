@@ -190,3 +190,56 @@ describe("WalletsService.createWatchOnly", () => {
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 });
+
+// Faz 3 §3.2 — `balance-sync` worker'ının kullandığı ince servis metotları.
+// Worker repository'ye doğrudan erişmez; servis passthrough sağlar.
+describe("WalletsService — balance-sync destek metotları", () => {
+  let repository: jest.Mocked<
+    Pick<WalletsRepository, "findActiveWalletAssetPairs" | "upsertBalanceCache">
+  >;
+  let service: WalletsService;
+
+  beforeEach(() => {
+    repository = {
+      findActiveWalletAssetPairs: jest.fn(),
+      upsertBalanceCache: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new WalletsService(
+      repository as unknown as WalletsRepository,
+      {} as unknown as NetworksService,
+      {} as unknown as PrismaService,
+      {} as unknown as AuditService,
+    );
+  });
+
+  it("listActiveWalletAssetPairs repository sonucunu olduğu gibi döner", async () => {
+    const pairs = [
+      {
+        walletId: "w1",
+        address: VALID_EVM,
+        chainType: "evm" as const,
+        chainId: "11155111",
+        assetId: "a1",
+        assetContractAddress: null,
+        assetDecimals: 18,
+      },
+    ];
+    repository.findActiveWalletAssetPairs.mockResolvedValue(pairs);
+
+    await expect(service.listActiveWalletAssetPairs()).resolves.toBe(pairs);
+  });
+
+  it("saveCachedBalance girdiyi repository.upsertBalanceCache'e geçirir", async () => {
+    await service.saveCachedBalance({
+      walletId: "w1",
+      assetId: "a1",
+      balanceRaw: "1000000000000000000",
+    });
+
+    expect(repository.upsertBalanceCache).toHaveBeenCalledWith({
+      walletId: "w1",
+      assetId: "a1",
+      balanceRaw: "1000000000000000000",
+    });
+  });
+});

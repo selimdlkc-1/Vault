@@ -59,7 +59,7 @@ jobs:
       ALCHEMY_API_KEY: ci-dummy-alchemy-key
       ALCHEMY_WEBHOOK_SIGNING_KEY: ci-dummy-webhook-key
       TRONGRID_API_KEY: ci-dummy-trongrid-key
-      CHAIN_ID_ALLOWLIST: sepolia,bsc-testnet,tron-shasta
+      CHAIN_ID_ALLOWLIST: 11155111,97,shasta
       CORS_ORIGIN: http://localhost:3000
       COOKIE_SECURE: "true"
 

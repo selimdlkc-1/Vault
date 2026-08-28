@@ -28,7 +28,7 @@ export interface IChainProvider {
 
   /**
    * `address`'in `asset` cinsinden bakiyesini en küçük birimde (wei/sun)
-   * string olarak döner. Faz 3 §3.2 dolduracak.
+   * string olarak döner (`balance-sync` worker'ı çağırır, Faz 3 §3.2).
    */
   getBalance(address: string, asset: AssetRef): Promise<string>;
 

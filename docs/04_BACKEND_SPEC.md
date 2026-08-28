@@ -217,7 +217,7 @@ Env değişkenleri `apps/api/.env` dosyasında tutulur (`.gitignore`'da), lokal/
 | `ALCHEMY_WEBHOOK_SIGNING_KEY` | — | Gelen webhook imzasını doğrulamak için |
 | `TRONGRID_API_KEY` | — | TronGrid erişimi |
 | `COINGECKO_API_KEY` | — | Fiyat kaynağı erişimi (varsa; public tier'da boş bırakılabilir) |
-| `CHAIN_ID_ALLOWLIST` | `sepolia,bsc-testnet,tron-shasta` | Mainnet bağlantısını engelleyen sabit izin listesi |
+| `CHAIN_ID_ALLOWLIST` | `11155111,97,shasta` | Mainnet bağlantısını engelleyen sabit izin listesi; değerler `networks.chain_id` ile birebir aynı biçimdedir (provider constructor'ı bu değeri karşılaştırır) |
 | `CORS_ORIGIN` | `http://localhost:3000` | Yalnızca frontend origin'ine izin verilir |
 | `NODE_ENV` | `development` | `development` \| `test` (tek ortam; `production` MVP'de kullanılmaz) |
 | `LOG_LEVEL` | `info` | pino log seviyesi |

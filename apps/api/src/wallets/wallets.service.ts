@@ -9,7 +9,11 @@ import {
 import { NetworksService } from "../networks/networks.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { AuditService } from "../audit/audit.service";
-import { WalletsRepository } from "./wallets.repository";
+import {
+  WalletsRepository,
+  type ActiveWalletAssetPair,
+  type UpsertBalanceCacheData,
+} from "./wallets.repository";
 
 /** `POST /wallets/watch-only` yanıtı — oluşturulan cüzdan (`docs/03_API_CONTRACTS.md` §5.2). */
 export interface WalletView {
@@ -103,5 +107,23 @@ export class WalletsService {
       address: wallet.address,
       createdAt: wallet.createdAt.toISOString(),
     };
+  }
+
+  /**
+   * `balance-sync` worker'ının fan-out adımı için: senkronlanacak tüm aktif
+   * `(wallet, asset)` çiftleri (Faz 3 §3.2). Worker repository'ye doğrudan
+   * erişmez — domain servisini enjekte eder (`docs/04_BACKEND_SPEC.md` §2).
+   */
+  listActiveWalletAssetPairs(): Promise<ActiveWalletAssetPair[]> {
+    return this.repository.findActiveWalletAssetPairs();
+  }
+
+  /**
+   * `balance-sync` worker'ının tek çift adımı için: okunan zincir bakiyesini
+   * `balance_caches`'e yazar (Faz 3 §3.2). `balanceRaw` en küçük birimde bir
+   * BigInt string'idir, servis onu yorumlamaz.
+   */
+  saveCachedBalance(data: UpsertBalanceCacheData): Promise<void> {
+    return this.repository.upsertBalanceCache(data);
   }
 }

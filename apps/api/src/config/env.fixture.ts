@@ -29,6 +29,6 @@ export const validEnvFixture: Record<string, string> = {
   ALCHEMY_WEBHOOK_SIGNING_KEY: "dummy-webhook-key",
   TRONGRID_API_KEY: "dummy-trongrid-key",
 
-  CHAIN_ID_ALLOWLIST: "sepolia,bsc-testnet,tron-shasta",
+  CHAIN_ID_ALLOWLIST: "11155111,97,shasta",
   CORS_ORIGIN: "http://localhost:3000",
 };

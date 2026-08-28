@@ -112,7 +112,7 @@ Env değişkenleri `apps/api/.env` dosyasında tutulur (`.gitignore`'da); uygula
 | `ALCHEMY_API_KEY`, `ALCHEMY_WEBHOOK_SIGNING_KEY` | Alchemy hesabı üzerinden bir uygulama (app) oluşturulup elde edilir; webhook signing key, webhook oluşturulurken Alchemy panelinden alınır. |
 | `TRONGRID_API_KEY` | TronGrid geliştirici portalından ücretsiz bir hesapla alınır. |
 | `COINGECKO_API_KEY` | CoinGecko public API tier'ı için boş bırakılabilir; yüksek hacimli kullanım gerekiyorsa ücretli bir plan anahtarı girilir. |
-| `CHAIN_ID_ALLOWLIST` | Sabit değer (`sepolia,bsc-testnet,tron-shasta`), dışarıdan temin gerekmez — bu liste genişletilmez. |
+| `CHAIN_ID_ALLOWLIST` | Sabit değer (`11155111,97,shasta` — `networks.chain_id` biçimiyle aynı), dışarıdan temin gerekmez — bu liste genişletilmez. |
 | `CORS_ORIGIN` | Sabit lokal değer (`http://localhost:3000`), dışarıdan temin gerekmez. |
 | `NODE_ENV`, `LOG_LEVEL` | Sabit değerler (`development`, `info`), dışarıdan temin gerekmez. |
 | `COOKIE_SECURE` | Sabit lokal değer (`false`) — sistem tek ortamda (düz `http://localhost`) çalıştığından refresh cookie'nin `secure` bayrağı bu değişkenle kontrol edilir; varsayılan/güvenli davranış `true`'dur, yalnızca bu açık bayrakla dev'de kapatılabilir (bkz. `mimari-kararlar.md` SEC-013). |

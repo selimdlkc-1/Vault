@@ -116,7 +116,7 @@ Fazlar arasında paralelleştirme yapılmaz — her faz tek bir agent oturumu zi
 
 **İnsan onay noktası:** Faz 2 sonunda Admin, bir `(network, asset)` çiftini pasif yapabiliyor ve bu değişiklik `audit_logs`'a yazılıyor; mainnet allowlist reddi testle doğrulanmış olmalı. ✅ Doğrulandı — `(network, asset)` pasifleştirme + atomik `audit_logs` yazımı §2.3 (`feat/admin-network-asset-activation`), Admin ekranı §2.4 (`feat/admin-network-assets-screen`); mainnet chain ID reddi (zorunlu negatif senaryo #11) §2.5'te `packages/chain-providers` unit testleriyle (`feat/chain-provider-skeleton-allowlist`).
 
-> **Faz 3 öncesi takip:** `CHAIN_ID_ALLOWLIST` env değeri (`ci.yml`, `apps/api/src/config/env.fixture.ts`, `docs/04` §10, `docs/09` §7) hâlâ `sepolia,bsc-testnet,tron-shasta`; `docs/02` §2.2 ve İterasyon 1 seed'i `chain_id`'yi `11155111,97,shasta` olarak otoriter kıldığından, Faz 3 §3.2'de provider'lar `apps/api`'de wire edilmeden önce bu değer düzeltilmelidir (allowlist genişletme değil, string biçimi düzeltmesi).
+> **Faz 3 öncesi takip (çözüldü — §3.2):** `CHAIN_ID_ALLOWLIST` env değeri `11155111,97,shasta` olarak düzeltildi (`ci.yml`, `apps/api/.env.example`, `apps/api/src/config/env.fixture.ts`, `env.schema.ts` yorumu, `docs/04` §10, `docs/09` §7) — `docs/02` §2.2 ve seed'in `chain_id` biçimiyle birebir hizalı. Allowlist genişletme değil, string biçimi düzeltmesi; provider'lar §3.2'de `ChainProviderFactory` üzerinden `apps/api`'ye wire edildi.
 
 ### Faz 3 — Watch-only Cüzdan ve Salt-okunur Portföy
 
