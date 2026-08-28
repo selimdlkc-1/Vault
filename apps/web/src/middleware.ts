@@ -6,15 +6,24 @@ import { NextResponse, type NextRequest } from "next/server";
  * SEC-007). httpOnly refresh cookie'si `Path=/api/v1/auth` ile sınırlı ve
  * middleware'den okunamadığından (`docs/03` §4), burada token içermeyen bir
  * oturum-ipucu cookie'sine (`vault_session`) bakılır (bkz. `lib/session-hint.ts`).
+ *
+ * `(admin)` path'leri de yalnızca cookie VARLIĞIYLA korunur — cookie httpOnly
+ * olduğundan rol okunamaz; admin rol zorlaması backend'de ve `(admin)/layout.tsx`
+ * UX kısayolundadır.
  */
 const SESSION_HINT_COOKIE = "vault_session";
 const AUTH_PAGES = new Set(["/login", "/register"]);
+const PROTECTED_PREFIXES = ["/dashboard", "/admin"];
 
 export function middleware(request: NextRequest) {
   const hasHint = request.cookies.has(SESSION_HINT_COOKIE);
   const { pathname } = request.nextUrl;
 
-  if (pathname.startsWith("/dashboard") && !hasHint) {
+  const isProtected = PROTECTED_PREFIXES.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+  );
+
+  if (isProtected && !hasHint) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
@@ -30,5 +39,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/login", "/register"],
+  matcher: ["/dashboard/:path*", "/admin/:path*", "/login", "/register"],
 };
