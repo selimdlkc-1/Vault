@@ -102,7 +102,7 @@ Fazlar arasında paralelleştirme yapılmaz — her faz tek bir agent oturumu zi
 
 **İnsan onay noktası:** Faz 1 sonunda uçtan uca bir kullanıcı kayıt olup giriş yapabiliyor, access token süresi dolduğunda otomatik refresh çalışıyor, replay senaryosu integration testiyle doğrulanmış olmalı. ✅ Doğrulandı — `feat/frontend-auth-flow` PR'ı (§1.7); replay/rate-limit/refresh integration testleri §1.3–1.6'da, uçtan uca akış §1.7 manuel tarayıcı doğrulamasında.
 
-### Faz 2 — Network/Asset Master Data ve Admin Temeli
+### Faz 2 — Network/Asset Master Data ve Admin Temeli ✅ Tamamlandı (2026-08-28)
 
 **§2.1 — Network/Asset şeması ve seed verisi.** `networks`, `assets`, `network_assets` tabloları tam alanlarıyla; seed script'i üç ağı (Sepolia, BSC Testnet, Tron Shasta), native varlıkları ve mock USDT'yi (her ağda ayrı `Asset` kaydı) `is_active = true` olarak yazacak şekilde genişletilir.
 
@@ -114,7 +114,9 @@ Fazlar arasında paralelleştirme yapılmaz — her faz tek bir agent oturumu zi
 
 **§2.5 — IChainProvider arayüzü ve chain ID allowlist.** `EvmProvider`/`TronProvider` sınıf iskeletleri (henüz gerçek RPC çağrısı yapmadan); provider başlatılırken `CHAIN_ID_ALLOWLIST` kontrolü — mainnet chain ID'siyle başlatma denemesi burada ilk kez reddedilir ve bir unit testle kanıtlanır.
 
-**İnsan onay noktası:** Faz 2 sonunda Admin, bir `(network, asset)` çiftini pasif yapabiliyor ve bu değişiklik `audit_logs`'a yazılıyor; mainnet allowlist reddi testle doğrulanmış olmalı.
+**İnsan onay noktası:** Faz 2 sonunda Admin, bir `(network, asset)` çiftini pasif yapabiliyor ve bu değişiklik `audit_logs`'a yazılıyor; mainnet allowlist reddi testle doğrulanmış olmalı. ✅ Doğrulandı — `(network, asset)` pasifleştirme + atomik `audit_logs` yazımı §2.3 (`feat/admin-network-asset-activation`), Admin ekranı §2.4 (`feat/admin-network-assets-screen`); mainnet chain ID reddi (zorunlu negatif senaryo #11) §2.5'te `packages/chain-providers` unit testleriyle (`feat/chain-provider-skeleton-allowlist`).
+
+> **Faz 3 öncesi takip:** `CHAIN_ID_ALLOWLIST` env değeri (`ci.yml`, `apps/api/src/config/env.fixture.ts`, `docs/04` §10, `docs/09` §7) hâlâ `sepolia,bsc-testnet,tron-shasta`; `docs/02` §2.2 ve İterasyon 1 seed'i `chain_id`'yi `11155111,97,shasta` olarak otoriter kıldığından, Faz 3 §3.2'de provider'lar `apps/api`'de wire edilmeden önce bu değer düzeltilmelidir (allowlist genişletme değil, string biçimi düzeltmesi).
 
 ### Faz 3 — Watch-only Cüzdan ve Salt-okunur Portföy
 
