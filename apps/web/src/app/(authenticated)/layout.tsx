@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ReactNode } from "react";
+import { TestnetDisclaimer } from "@/components/composite/testnet-disclaimer";
 import { LogoutConfirmDialog } from "@/components/features/logout-confirm-dialog";
 import { Button } from "@/components/ui/button";
 import { useAuthContext } from "@/context/auth-context";
@@ -39,9 +40,7 @@ export default function AuthenticatedLayout({ children }: { children: ReactNode 
           {messages.dashboard.logout}
         </Button>
       </header>
-      <p className="bg-muted px-6 py-1.5 text-center text-xs text-muted-foreground">
-        testnet varlıkları — gösterge değerdir
-      </p>
+      <TestnetDisclaimer />
       <main className="flex-1 px-6 py-8">{children}</main>
 
       <LogoutConfirmDialog

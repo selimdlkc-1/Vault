@@ -40,6 +40,21 @@ export const messages = {
       "Bu geçici bir yer tutucu ekrandır. Portföy panosu Faz 3 §3.5'te eklenecek.",
     logout: "Çıkış Yap",
   },
+  testnetDisclaimer: "testnet varlıkları — gösterge değerdir",
+  admin: {
+    // Admin nav'da bu iterasyonda tek link vardır; Mock Mint (Faz 4 §4.4),
+    // Audit Log (Faz 6 §6.3), Kullanıcılar (Faz 6 §6.4) kendi fazlarında eklenir.
+    navNetworkAssets: "Ağ / Varlık Yönetimi",
+    networkAssets: {
+      // TR metinler docs/06_SCREEN_CATALOG.md §4.4'ten birebir.
+      title: "Ağ / Varlık Yönetimi",
+      statusActive: "Aktif",
+      statusPassive: "Pasif",
+      readonlyNote: "Mevcut cüzdanlar salt-okunur kalacak.",
+      toggleError: "Durum güncellenemedi, lütfen tekrar deneyin.",
+      loadError: "Ağ ve varlık listesi yüklenemedi.",
+    },
+  },
   errorByCode: {
     AUTH_INVALID_CREDENTIALS: "E-posta veya şifre hatalı.",
     EMAIL_ALREADY_EXISTS: "Bu e-posta adresi zaten kayıtlı.",
