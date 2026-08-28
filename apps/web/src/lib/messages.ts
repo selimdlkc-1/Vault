@@ -71,6 +71,39 @@ export const messages = {
     columnAddress: "Adres",
     columnValue: "Toplam Değer",
   },
+  walletDetail: {
+    // TR metinler docs/06_SCREEN_CATALOG.md §4.2 S-WALLET-DETAIL'den birebir.
+    title: "Cüzdan Detayı",
+    networkLabel: "Ağ",
+    typeLabel: "Tip",
+    addressLabel: "Adres",
+    copyAddress: "Adresi Kopyala",
+    copied: "Adres kopyalandı",
+    sendTransfer: "Transfer Gönder",
+    seeAllMovements: "Tüm Hareketleri Gör",
+    balancesTitle: "Varlıklar",
+    columnAsset: "Varlık",
+    columnAmount: "Miktar",
+    columnValue: "USDT Karşılığı",
+    movementsTitle: "Son Hareketler",
+    balancesEmpty: "Bu cüzdanda henüz bir varlık bulunmuyor.",
+    movementsEmpty: "Bu cüzdan için henüz zincir hareketi indexlenmedi.",
+    loadError: "Cüzdan bilgisi yüklenemedi.",
+    notFound: "Cüzdan bulunamadı.",
+    backToList: "Cüzdanlarıma dön",
+  },
+  walletAdd: {
+    // TR metinler docs/06_SCREEN_CATALOG.md §4.2 S-WALLET-ADD-WATCHONLY'den birebir.
+    watchOnlyTitle: "İzleme Cüzdanı Ekle",
+    networkLabel: "Ağ",
+    networkPlaceholder: "Ağ seçin",
+    addressLabel: "Adres",
+    submit: "Cüzdanı Ekle",
+    submitting: "Ekleniyor...",
+    cancel: "Vazgeç",
+    unsupportedType:
+      "Yönetilen cüzdan oluşturma Faz 4'te eklenecek. Şimdilik yalnızca izleme cüzdanı eklenebilir.",
+  },
   movements: {
     // Geçici placeholder (İterasyon 9 — S-MOVEMENTS). Faz 1/2 placeholder disiplini.
     placeholderTitle: "Hareketler",
@@ -98,5 +131,9 @@ export const messages = {
     RATE_LIMIT_EXCEEDED:
       "Çok fazla deneme yapıldı, lütfen birkaç dakika sonra tekrar deneyin.",
     VALIDATION_FAILED: "Girdiğiniz bilgileri kontrol edin.",
+    // S-WALLET-ADD-WATCHONLY hata eşlemesi (docs/06 §4.2).
+    WALLET_ADDRESS_INVALID_FORMAT: "Adres formatı bu ağ için geçerli değil.",
+    NETWORK_ASSET_INACTIVE: "Bu ağ şu anda kullanıma kapalı.",
+    WALLET_ADDRESS_ALREADY_EXISTS: "Bu adres zaten sisteme kayıtlı.",
   } as Record<string, string>,
 } as const;
