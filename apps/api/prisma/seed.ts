@@ -1,7 +1,10 @@
 // Vault — Prisma seed script'i.
 // Faz 2 §2.1: Faz 0'da iskeleti kurulan bu script, üç testnet ağı + native
 // varlıklar + mock USDT (tüm (network, asset) çiftleri is_active = true) ve
-// 1 admin kullanıcı ile dolduruldu. İdempotent upsert kalıbı korunur —
+// 1 admin kullanıcı ile dolduruldu.
+// Faz 3 §3.1: 1 demo kullanıcı (role = 'user') + bu kullanıcıya ait 1 watch-only
+// cüzdan (Sepolia, gerçek EIP-55 adres) eklendi; managed cüzdan seed'i Faz 4'e
+// kalır (docs/02 §9). İdempotent upsert kalıbı korunur —
 // `pnpm --filter api run seed` istediğiniz kadar tekrar çalıştırılabilir.
 //
 // Kaynak: docs/02_DATABASE_SCHEMA.md §2.2-2.4 (şema) ve §9 (seed verisi),
@@ -23,6 +26,15 @@ const passwords = new PasswordService();
 // yalnızca bu geliştirme seed'inde sabittir, hiçbir zaman persist/log edilmez.
 const ADMIN_EMAIL = "admin@vault.local";
 const ADMIN_PASSWORD = "Vault-Admin-2026";
+
+// Sabit demo kullanıcı (docs/02 §9). Faz 3 §3.1: bu kullanıcıya ait 1 watch-only
+// cüzdan eklenir; managed cüzdan seed'i Faz 4'e kalır (docs/02 §9 notu).
+const DEMO_EMAIL = "demo@vault.local";
+const DEMO_PASSWORD = "Vault-Demo-2026";
+
+// Gerçek, EIP-55 checksum'lı bir Sepolia adresi (vitalik.eth). Watch-only —
+// private key sistemde yok, yalnızca izlenir.
+const DEMO_WATCH_ONLY_ADDRESS = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
 
 // --- Network kataloğu (docs/02 §2.2, §9; threshold: mimari-kararlar I-004) ---
 const networks: Prisma.NetworkCreateInput[] = [
@@ -113,11 +125,45 @@ async function seedAdminUser(): Promise<void> {
   });
 }
 
+// Sabit demo kullanıcı + 1 watch-only cüzdan (docs/02 §9, Faz 3 §3.1).
+// `wallets` benzersizlik anahtarı `(network_id, address)` olduğundan cüzdan
+// upsert'i de idempotenttir.
+async function seedDemoUser(): Promise<void> {
+  const passwordHash = await passwords.hash(DEMO_PASSWORD);
+
+  const demo = await prisma.user.upsert({
+    where: { email: DEMO_EMAIL },
+    update: { role: "user" },
+    create: { email: DEMO_EMAIL, passwordHash, role: "user" },
+  });
+
+  const sepolia = await prisma.network.findUniqueOrThrow({
+    where: { chainId: "11155111" },
+  });
+
+  await prisma.wallet.upsert({
+    where: {
+      networkId_address: {
+        networkId: sepolia.id,
+        address: DEMO_WATCH_ONLY_ADDRESS,
+      },
+    },
+    update: {},
+    create: {
+      userId: demo.id,
+      networkId: sepolia.id,
+      type: "watch_only",
+      address: DEMO_WATCH_ONLY_ADDRESS,
+    },
+  });
+}
+
 async function main(): Promise<void> {
   await seedNetworks();
   await seedAssets();
   await seedNetworkAssets();
   await seedAdminUser();
+  await seedDemoUser();
 }
 
 main()

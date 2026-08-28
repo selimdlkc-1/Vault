@@ -7,6 +7,7 @@ import { RolesGuard } from "./common/guards/roles.guard";
 import { validateEnv } from "./config/env.schema";
 import { NetworksModule } from "./networks/networks.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { WalletsModule } from "./wallets/wallets.module";
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { PrismaModule } from "./prisma/prisma.module";
     PrismaModule,
     AuthModule,
     NetworksModule,
+    WalletsModule,
   ],
   controllers: [],
   providers: [

@@ -120,6 +120,49 @@ export class ResourceNotFoundException extends DomainException {
   }
 }
 
+/**
+ * `422 WALLET_ADDRESS_INVALID_FORMAT` — girilen adres, ağın beklediği formatta
+ * değil (EVM EIP-55 checksum / Tron base58check hatası). `docs/03_API_CONTRACTS.md`
+ * §3/§5.2, `docs/08_TESTING_STRATEGY.md` §4 senaryo #12.
+ */
+export class WalletAddressInvalidFormatException extends DomainException {
+  readonly code = "WALLET_ADDRESS_INVALID_FORMAT";
+  readonly httpStatus = 422;
+
+  constructor() {
+    super("Girilen adres, seçilen ağın formatına uymuyor.");
+  }
+}
+
+/**
+ * `409 NETWORK_ASSET_INACTIVE` — hedef `(network, asset)` çiftlerinden hiçbiri
+ * aktif değil; cüzdan/transfer oluşturulamaz. `docs/01_DOMAIN_MODEL.md` §4 madde
+ * 1, `docs/03_API_CONTRACTS.md` §3/§5.2, `docs/08_TESTING_STRATEGY.md` §4 senaryo #2.
+ */
+export class NetworkAssetInactiveException extends DomainException {
+  readonly code = "NETWORK_ASSET_INACTIVE";
+  readonly httpStatus = 409;
+
+  constructor() {
+    super("Bu ağ için aktif bir varlık bulunmuyor; cüzdan eklenemez.");
+  }
+}
+
+/**
+ * `409 WALLET_ADDRESS_ALREADY_EXISTS` — aynı `(network, address)` çiftiyle bir
+ * cüzdan zaten kayıtlı (`docs/03_API_CONTRACTS.md` §3/§5.2). Servis ön kontrolde
+ * bu hatayı fırlatır; yarış durumunda Prisma `P2002` de `AllExceptionsFilter`'da
+ * bu koda eşlenir (`docs/04_BACKEND_SPEC.md` §6).
+ */
+export class WalletAddressAlreadyExistsException extends DomainException {
+  readonly code = "WALLET_ADDRESS_ALREADY_EXISTS";
+  readonly httpStatus = 409;
+
+  constructor() {
+    super("Bu adres bu ağda zaten bir cüzdan olarak kayıtlı.");
+  }
+}
+
 export interface ValidationIssue {
   field: string;
   reason: string;

@@ -90,6 +90,7 @@ Error code formatı: `<DOMAIN>_<REASON>`, tamamı `UPPER_SNAKE_CASE`. Her kod te
 | `FORBIDDEN_NOT_OWNER` | 403 | Kaynak (cüzdan/transfer) isteği yapan kullanıcıya ait değil |
 | `RESOURCE_NOT_FOUND` | 404 | Belirtilen id ile eşleşen kayıt yok |
 | `NETWORK_ASSET_INACTIVE` | 409 | Hedef `(network, asset)` çifti aktif değil; cüzdan/transfer oluşturulamaz |
+| `WALLET_ADDRESS_ALREADY_EXISTS` | 409 | Aynı `(network, address)` çiftiyle bir cüzdan zaten kayıtlı (watch-only ekleme) |
 | `WALLET_CROSS_NETWORK_MISMATCH` | 409 | Gönderen cüzdanın ağı ile hedef adresin beklenen ağı uyuşmuyor |
 | `WALLET_INSUFFICIENT_BALANCE` | 409 | Bakiye, tutar + tahmini gas/fee'yi karşılamıyor |
 | `WALLET_NOT_MANAGED` | 409 | Watch-only bir cüzdandan transfer başlatılmaya çalışıldı |

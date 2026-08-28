@@ -38,6 +38,9 @@ importers:
       '@prisma/client':
         specifier: ^5.22.0
         version: 5.22.0(prisma@5.22.0)
+      '@vault/chain-providers':
+        specifier: workspace:*
+        version: link:../../packages/chain-providers
       '@vault/types':
         specifier: workspace:*
         version: link:../../packages/types

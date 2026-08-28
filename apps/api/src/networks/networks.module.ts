@@ -15,5 +15,8 @@ import { NetworksService } from "./networks.service";
   imports: [AuditModule],
   controllers: [NetworksController, AdminNetworkAssetsController],
   providers: [NetworksService, NetworksRepository],
+  // `WalletsModule` (Faz 3 §3.1) `NetworksService`'i cüzdan eklerken ağ
+  // chainType'ı + `(network, asset)` aktiflik kontrolü için enjekte eder.
+  exports: [NetworksService],
 })
 export class NetworksModule {}
