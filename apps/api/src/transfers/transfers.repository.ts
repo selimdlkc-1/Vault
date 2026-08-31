@@ -3,6 +3,13 @@ import type { Prisma, Transfer, TransferState } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
+ * Transfer + sahiplik için gereken tek alan (`wallet.user_id` — `transfers`'ta
+ * ayrı `user_id` yoktur, `docs/mimari-kararlar.md` W-004). `TransfersService.confirm`
+ * (Faz 5 §5.2) sahiplik kontrolü + guard girdileri için bunu okur.
+ */
+export type TransferWithOwner = Transfer & { wallet: { userId: string } };
+
+/**
  * `transfers` insert girdisi (`docs/02_DATABASE_SCHEMA.md` §2.7). `state` alanı
  * bilinçli olarak zorunludur ve yalnızca `TransferStateMachine` tarafından
  * geçirilir — repository state değerini kendi başına seçmez
@@ -77,6 +84,48 @@ export class TransfersRepository {
   ): Promise<Transfer | null> {
     return this.prisma.transfer.findUnique({
       where: { walletId_idempotencyKey: { walletId, idempotencyKey } },
+    });
+  }
+
+  /**
+   * Tek bir transfer, sahiplik kontrolü için `wallet.user_id` ile birlikte
+   * (Faz 5 §5.2 `POST /transfers/:id/confirm`). Bulunamazsa `null` — çağıran
+   * (`TransfersService`) sahiplikle birleştirip `FORBIDDEN_NOT_OWNER`'a indirger
+   * (varlık sızıntısını önlemek için "yok" ile "başkasının" ayrılmaz,
+   * `docs/03_API_CONTRACTS.md` §5.4 hata listesi `RESOURCE_NOT_FOUND` içermez).
+   */
+  findByIdWithOwner(transferId: string): Promise<TransferWithOwner | null> {
+    return this.prisma.transfer.findUnique({
+      where: { id: transferId },
+      include: { wallet: { select: { userId: true } } },
+    });
+  }
+
+  /**
+   * Transfer'i çağıranın `$transaction`'ı içinde okur — `TransferStateMachine.transitionTo`
+   * geçiş öncesi güncel `state`'i taze okur (whitelist kontrolü + `from_state`
+   * kaydı için), yazımla aynı atomik blokta.
+   */
+  findByIdInTx(
+    tx: Prisma.TransactionClient,
+    transferId: string,
+  ): Promise<Transfer | null> {
+    return tx.transfer.findUnique({ where: { id: transferId } });
+  }
+
+  /**
+   * `transfers.state`'i çağıranın `$transaction`'ı içinde günceller. Yalnızca
+   * `TransferStateMachine` çağırır (`.claude/rules/13-critical-modules.md` kesin
+   * kural — bu alana başka hiçbir kod yolu `UPDATE` uygulamaz).
+   */
+  updateState(
+    tx: Prisma.TransactionClient,
+    transferId: string,
+    state: TransferState,
+  ): Promise<Transfer> {
+    return tx.transfer.update({
+      where: { id: transferId },
+      data: { state },
     });
   }
 

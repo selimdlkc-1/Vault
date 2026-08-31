@@ -431,6 +431,17 @@ export class WalletsService {
   }
 
   /**
+   * Bir `(wallet, asset)` çiftinin önbelleğe alınmış bakiyesi, en küçük birimde
+   * `BigInt` olarak (Faz 5 §5.2 — `TransfersService.confirm` bakiye yeterliliği
+   * kontrolü). Kayıt yoksa `0n`. `BigInt` döner, asla JS `number`
+   * (`.claude/rules/15-backend-data.md`); karşılaştırma çağıranda yapılır.
+   */
+  async getCachedBalanceRaw(walletId: string, assetId: string): Promise<bigint> {
+    const raw = await this.repository.findCachedBalanceRaw(walletId, assetId);
+    return raw === null ? 0n : BigInt(raw);
+  }
+
+  /**
    * `balance-sync` worker'ının fan-out adımı için: senkronlanacak tüm aktif
    * `(wallet, asset)` çiftleri (Faz 3 §3.2). Worker repository'ye doğrudan
    * erişmez — domain servisini enjekte eder (`docs/04_BACKEND_SPEC.md` §2).

@@ -1,6 +1,18 @@
 import { Injectable } from "@nestjs/common";
 import { Prisma, type Transfer } from "@prisma/client";
+import { isValidAddress } from "@vault/chain-providers";
 import type { CreateTransferInput, TransferStateValue } from "@vault/types";
+import { AuditService } from "../audit/audit.service";
+import { AuthService } from "../auth/auth.service";
+import {
+  AuthStepUpRequiredException,
+  ForbiddenNotOwnerException,
+  NetworkAssetInactiveException,
+  TransferInvalidTransitionException,
+  WalletCrossNetworkMismatchException,
+  WalletInsufficientBalanceException,
+} from "../common/exceptions/domain.exception";
+import { NetworksService } from "../networks/networks.service";
 import { PrismaService } from "../prisma/prisma.service";
 import { WalletsService } from "../wallets/wallets.service";
 import { TransfersRepository } from "./transfers.repository";
@@ -37,6 +49,11 @@ export interface CreateDraftResult {
 /** İstemci-tarafı idempotency penceresi — 24 saat (`docs/03_API_CONTRACTS.md` §7). */
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
+/** `POST /transfers/:id/confirm` yanıtı (`docs/03_API_CONTRACTS.md` §5.4). */
+export interface ConfirmTransferResult {
+  state: TransferStateValue;
+}
+
 /**
  * Transfer iş mantığı (`.claude/rules/10` service katmanı). Bu iterasyonda
  * yalnızca draft oluşturma yolu var: sahiplik + managed tip kontrolü
@@ -58,6 +75,15 @@ export class TransfersService {
     // (`docs/04_BACKEND_SPEC.md` §3 — `TransfersModule` sahiplik kontrolü için
     // `WalletsModule`'ü import eder).
     private readonly walletsService: WalletsService,
+    // Step-up authentication (`docs/mimari-kararlar.md` SEC-008) — `AuthModule`'den
+    // enjekte edilir; `draft → pending_signature` öncesi şifre tekrarı doğrulaması.
+    private readonly authService: AuthService,
+    // Cross-network guard'ın ağ `chainType`'ı + `(network, asset)` aktiflik
+    // tekrar kontrolü için (`docs/mimari-kararlar.md` AUTH-003/AUTH-004).
+    private readonly networksService: NetworksService,
+    // `TRANSFER_STATE_CHANGED` audit kaydı, geçişle aynı `$transaction` içinde
+    // (`docs/04_BACKEND_SPEC.md` §7).
+    private readonly audit: AuditService,
   ) {}
 
   /**
@@ -117,6 +143,104 @@ export class TransfersService {
       }
       throw error;
     }
+  }
+
+  /**
+   * `POST /transfers/:id/confirm` (`docs/03_API_CONTRACTS.md` §5.4,
+   * `docs/01_DOMAIN_MODEL.md` §5.2 `draft → pending_signature`). Kontrol sırası
+   * **önemlidir** (`.claude/rules/03-security-baseline.md` madde 3-4, iterasyon
+   * "Risk / dikkat"): step-up EN ÖNCE — yanlış şifreyle gelen bir istek
+   * cross-network/bakiye guard'larının hiçbirini tetiklemeden reddedilir (hata
+   * mesajı üzerinden bilgi sızıntısı önlemi). Sırasıyla:
+   * 1. Transfer + sahiplik (`wallet.user_id`) — yok **veya** başkasının →
+   *    `FORBIDDEN_NOT_OWNER` (ayrılmaz, §5.4 hata listesi `RESOURCE_NOT_FOUND`
+   *    içermez).
+   * 2. Mevcut durum `draft` değil → `TRANSFER_INVALID_TRANSITION` (terminal
+   *    durum da bu koda düşer).
+   * 3. **Step-up**: `AuthService.verifyPassword` başarısız → `AUTH_STEP_UP_REQUIRED`.
+   * 4. Cross-network guard: hedef adres, gönderen cüzdanın ağının formatına
+   *    uymuyorsa → `WALLET_CROSS_NETWORK_MISMATCH` (yalnızca backend,
+   *    `docs/mimari-kararlar.md` AUTH-004).
+   * 5. `(network, asset)` aktiflik tekrar kontrolü (arada pasifleşmiş olabilir)
+   *    → `NETWORK_ASSET_INACTIVE`.
+   * 6. Bakiye yeterliliği — DB önbelleğinden (`balance_caches`), canlı RPC yok
+   *    (`docs/mimari-kararlar.md` I-003); worker yeniden kontrolü İterasyon 3 →
+   *    `WALLET_INSUFFICIENT_BALANCE`.
+   *
+   * Tüm kontroller geçerse tek `$transaction`:
+   * `TransferStateMachine.transitionTo(draft → pending_signature, actor: 'user')`
+   * + `AuditService.record` `TRANSFER_STATE_CHANGED`. Bu iterasyonda bir kuyruğa
+   * iş bırakılmaz (signing kuyruğu İterasyon 3).
+   */
+  async confirm(
+    userId: string,
+    transferId: string,
+    currentPassword: string,
+  ): Promise<ConfirmTransferResult> {
+    const transfer = await this.repository.findByIdWithOwner(transferId);
+    if (!transfer || transfer.wallet.userId !== userId) {
+      throw new ForbiddenNotOwnerException();
+    }
+
+    if (transfer.state !== "draft") {
+      throw new TransferInvalidTransitionException();
+    }
+
+    // (3) Step-up EN ÖNCE — diğer guard'lardan önce.
+    const passwordValid = await this.authService.verifyPassword(
+      userId,
+      currentPassword,
+    );
+    if (!passwordValid) {
+      throw new AuthStepUpRequiredException();
+    }
+
+    // (4) Cross-network guard — gönderen cüzdanın ağının `chainType`'ına göre
+    // hedef adres format doğrulaması (EIP-55 / base58check).
+    const network = await this.networksService.findNetworkById(
+      transfer.networkId,
+    );
+    if (!network || !isValidAddress(network.chainType, transfer.toAddress)) {
+      throw new WalletCrossNetworkMismatchException();
+    }
+
+    // (5) `(network, asset)` aktiflik tekrar kontrolü.
+    const assetActive = await this.networksService.isNetworkAssetActive(
+      transfer.networkId,
+      transfer.assetId,
+    );
+    if (!assetActive) {
+      throw new NetworkAssetInactiveException();
+    }
+
+    // (6) Bakiye yeterliliği — `BigInt` karşılaştırması, asla JS `number`.
+    const cachedBalance = await this.walletsService.getCachedBalanceRaw(
+      transfer.walletId,
+      transfer.assetId,
+    );
+    if (cachedBalance < BigInt(transfer.amount)) {
+      throw new WalletInsufficientBalanceException();
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await this.stateMachine.transitionTo(
+        tx,
+        transferId,
+        "pending_signature",
+        "user",
+      );
+      await this.audit.record(tx, {
+        actorType: "user",
+        actorId: userId,
+        action: "TRANSFER_STATE_CHANGED",
+        entityType: "transfer",
+        entityId: transferId,
+        metadata: { fromState: "draft", toState: "pending_signature" },
+      });
+      return result;
+    });
+
+    return { state: updated.state };
   }
 
   private toView(transfer: Transfer): TransferView {

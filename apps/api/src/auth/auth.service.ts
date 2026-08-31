@@ -168,6 +168,25 @@ export class AuthService {
   }
 
   /**
+   * Step-up authentication doğrulaması (`docs/07_SECURITY_IMPLEMENTATION.md` §4,
+   * `docs/mimari-kararlar.md` SEC-008). Faz 1'in `password_hash` doğrulama
+   * altyapısını (`PasswordService.verify`, argon2id) yeniden kullanır — verilen
+   * kullanıcının mevcut şifresi `plainPassword` ile eşleşiyor mu?
+   *
+   * `TransfersService.confirm` (Faz 5 §5.2) `draft → pending_signature` geçişinden
+   * önce bunu çağırır; `false` dönerse `AUTH_STEP_UP_REQUIRED`. Kullanıcı yoksa
+   * (silinmiş) `false` döner — hata fırlatılmaz, çağıran karar verir. Düz metin
+   * şifre hiçbir yere loglanmaz (`.claude/rules/03-security-baseline.md` madde 1).
+   */
+  async verifyPassword(userId: string, plainPassword: string): Promise<boolean> {
+    const user = await this.users.findById(userId);
+    if (!user) {
+      return false;
+    }
+    return this.passwords.verify(user.passwordHash, plainPassword);
+  }
+
+  /**
    * `POST /auth/logout` — mevcut refresh token'ı geçersiz kılar (`docs/03` §5.1,
    * Faz 1 §1.5). Cookie yoksa/eşleşmiyorsa sessiz no-op; endpoint her durumda
    * `204` döner ve cookie'yi temizler (controller sorumluluğu).

@@ -1,5 +1,8 @@
 import { Module } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
+import { AuditModule } from "../audit/audit.module";
+import { AuthModule } from "../auth/auth.module";
+import { NetworksModule } from "../networks/networks.module";
 import { WalletsModule } from "../wallets/wallets.module";
 import { TransfersController } from "./transfers.controller";
 import { TransfersRepository } from "./transfers.repository";
@@ -26,7 +29,11 @@ import { TransferStateMachine } from "./transfer-state-machine.service";
  * garanti çalışsın (`AdminModule` kalıbı).
  */
 @Module({
-  imports: [WalletsModule],
+  // İterasyon 2 (§5.2): `AuthModule` → step-up doğrulaması
+  // (`AuthService.verifyPassword`); `NetworksModule` → cross-network guard'ın ağ
+  // `chainType`'ı + `(network, asset)` aktiflik tekrar kontrolü; `AuditModule` →
+  // `TRANSFER_STATE_CHANGED` yazımı (geçişle aynı `$transaction`).
+  imports: [WalletsModule, AuthModule, NetworksModule, AuditModule],
   controllers: [TransfersController],
   providers: [
     TransfersService,

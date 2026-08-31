@@ -57,6 +57,8 @@ import { UsersRepository } from "./users.repository";
     ThrottlerGuard,
     LoginThrottlerGuard,
   ],
-  exports: [PasswordService, JwtModule],
+  // `AuthService` dışa aktarılır — Faz 5 §5.2: `TransfersModule` step-up
+  // authentication doğrulaması için `AuthService.verifyPassword`'ü enjekte eder.
+  exports: [PasswordService, AuthService, JwtModule],
 })
 export class AuthModule {}
