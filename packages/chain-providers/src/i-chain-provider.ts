@@ -22,6 +22,11 @@ export interface BroadcastResult {
   readonly txHash: string;
 }
 
+export interface MintResult {
+  /** Mock kontratın `mint()` çağrısının onaylanmış işlem hash'i. */
+  readonly txHash: string;
+}
+
 /**
  * HD wallet türetmesinin çıktısı (`docs/01_DOMAIN_MODEL.md` §5.1 Managed akışı).
  * `privateKey` yalnızca çağıranın (`WalletsService`) bellek-içi akışına döner;
@@ -59,4 +64,23 @@ export interface IChainProvider {
    * İmzalı ham işlemi zincire yayınlar ve tx hash'ini döner. Faz 5 dolduracak.
    */
   broadcastTransaction(signedTxHex: string): Promise<BroadcastResult>;
+
+  /**
+   * `contractAddress`'teki mock ERC-20/TRC-20 kontratının `mint(toAddress,
+   * amountRaw)` fonksiyonunu `operatorPrivateKey` (kontrat owner'ı) adına çağırır,
+   * işlemin onaylanmasını bekler ve tx hash'ini döner (`POST /admin/mint`,
+   * Faz 4 §4.4b). `amountRaw` en küçük birimde bir BigInt string'idir — asla
+   * `number`. RPC hatasında / `onlyOwner` revert'inde
+   * `ChainProviderUnavailableException` fırlatır.
+   *
+   * Senkron olarak HTTP yaşam döngüsü içinde beklenir (Faz 5'in worker'larının
+   * aksine kuyruğa devredilmez) — mint akışı Transfer state machine'in parçası
+   * değildir ve testnet blok süresi kadar gecikme admin panelinde kabul edilir.
+   */
+  mintToken(
+    contractAddress: string,
+    toAddress: string,
+    amountRaw: string,
+    operatorPrivateKey: string,
+  ): Promise<MintResult>;
 }

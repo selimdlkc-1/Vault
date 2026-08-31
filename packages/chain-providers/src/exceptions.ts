@@ -22,6 +22,27 @@ export class ChainIdNotAllowedException extends Error {
 }
 
 /**
+ * Bir zincir sağlayıcı çağrısı (RPC / TronGrid) geçici bir sağlayıcı hatasıyla
+ * başarısız olduğunda fırlatılır — ör. `CALL_EXCEPTION`, ağ zaman aşımı, veya
+ * mock kontrat `mint()`'inin `onlyOwner` revert'i (Faz 4 §4.4b: revert de en
+ * yakın mevcut hata kodu olan bu sınıfa eşlenir, yeni bir kod icat edilmez).
+ *
+ * Paket framework-agnostic olduğundan düz `Error` alt sınıfıdır; `apps/api`
+ * tarafı bunu kendi `CHAIN_PROVIDER_UNAVAILABLE` (`502`) domain exception'ına
+ * çevirir (`docs/03_API_CONTRACTS.md` §3/§5.8).
+ */
+export class ChainProviderUnavailableException extends Error {
+  /** Hangi provider metodunun başarısız olduğu (`"EvmProvider.mintToken"` gibi). */
+  readonly operation: string;
+
+  constructor(operation: string, options?: { cause?: unknown }) {
+    super(`Zincir sağlayıcı çağrısı başarısız: ${operation}`, options);
+    this.name = "ChainProviderUnavailableException";
+    this.operation = operation;
+  }
+}
+
+/**
  * Bu fazda arayüz imzası sabitlenir ama gövde henüz yoktur — `getBalance`
  * Faz 3 §3.2, `broadcastTransaction` Faz 5 tarafından doldurulacaktır.
  */

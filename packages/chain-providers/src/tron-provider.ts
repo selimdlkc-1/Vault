@@ -1,14 +1,19 @@
 import { HDNodeWallet } from "ethers";
 import { TronWeb } from "tronweb";
 
+import { MOCK_TRC20_ABI } from "./abi/mock-erc20.abi";
 import { assertChainIdAllowed } from "./chain-id-allowlist";
-import { NotImplementedException } from "./exceptions";
+import {
+  ChainProviderUnavailableException,
+  NotImplementedException,
+} from "./exceptions";
 import { TRON_COIN_TYPE, derivationPath } from "./hd-wallet";
 import type {
   AssetRef,
   BroadcastResult,
   DerivedWallet,
   IChainProvider,
+  MintResult,
 } from "./i-chain-provider";
 
 /**
@@ -40,9 +45,13 @@ export class TronProvider implements IChainProvider {
 
   private readonly tronWeb: TronWeb;
 
+  /** `mintToken` imzalama için ayrı, private key'li bir `TronWeb` kurabilmek üzere saklanır. */
+  private readonly fullHost: string;
+
   constructor(network: TronNetworkConfig, allowlist: readonly string[]) {
     assertChainIdAllowed(network.chainId, allowlist);
 
+    this.fullHost = network.rpcUrl;
     this.tronWeb = new TronWeb({ fullHost: network.rpcUrl });
   }
 
@@ -89,5 +98,35 @@ export class TronProvider implements IChainProvider {
 
   broadcastTransaction(): Promise<BroadcastResult> {
     throw new NotImplementedException("TronProvider.broadcastTransaction");
+  }
+
+  /**
+   * Mock TRC-20 kontratının `mint()`'ini owner cüzdanı adına çağırır (`docs/03`
+   * §5.8). İmzalama için constructor'daki paylaşılan `tronWeb` mutate edilmez —
+   * private key'li ayrı bir `TronWeb` örneği kurulur. `amountRaw` kontrata
+   * `bigint` olarak verilir (tronweb `Numbers = bigint | number`) — `number`'a
+   * daraltılmaz. TronGrid hatası / revert → `ChainProviderUnavailableException`.
+   */
+  async mintToken(
+    contractAddress: string,
+    toAddress: string,
+    amountRaw: string,
+    operatorPrivateKey: string,
+  ): Promise<MintResult> {
+    try {
+      const signer = new TronWeb({
+        fullHost: this.fullHost,
+        privateKey: operatorPrivateKey,
+      });
+      const contract = signer.contract(MOCK_TRC20_ABI, contractAddress);
+      const txHash = (await contract
+        .mint(toAddress, BigInt(amountRaw))
+        .send()) as string;
+      return { txHash };
+    } catch (error) {
+      throw new ChainProviderUnavailableException("TronProvider.mintToken", {
+        cause: error,
+      });
+    }
   }
 }

@@ -416,7 +416,9 @@ Sistemde kullanıcı/cüzdan/transfer silme akışı olmadığından (§7), vars
 | `chain_movements.wallet_id → wallets.id` | `RESTRICT` | `CASCADE` | Zincir hareket geçmişi denetlenebilir veri; cüzdanla birlikte kaybolamaz. |
 | `notifications.user_id → users.id` | `CASCADE` | `CASCADE` | Bildirimler kullanıcıya özel, denetim amaçlı değildir; pratikte kullanıcı silinmediği için tetiklenmez ama kavramsal olarak kullanıcıya bağımlıdır. |
 | `refresh_tokens.user_id → users.id` | `CASCADE` | `CASCADE` | Oturum/güvenlik artefaktı, denetim amaçlı değildir (`transfer_state_events`/`audit_logs`'un aksine); notifications ile aynı gerekçe. |
+| `mint_operations.admin_id → users.id` | `RESTRICT` | `CASCADE` | Mint işlemini yapan admin, mint geçmişi varken silinemez — denetlenebilirlik. |
 | `mint_operations.wallet_id → wallets.id` | `RESTRICT` | `CASCADE` | Mint geçmişi denetlenebilir veri. |
+| `mint_operations.asset_id → assets.id` | `RESTRICT` | `CASCADE` | Bir varlık, ona ait mint kaydı varken silinemez. |
 | `portfolio_snapshots.user_id → users.id` | `CASCADE` | `CASCADE` | Grafik geçmişi, denetim amaçlı değildir (`audit_logs`'un aksine); notifications/refresh_tokens ile aynı gerekçe. |
 | `audit_logs.*` | FK yok (zayıf referans) | — | `entity_type`/`entity_id` çifti kasıtlı olarak FK değildir; farklı tablolara işaret edebilmesi ve silinmiş/olmayan entity'lere referans içerebilmesi (ör. sistem olayları) gerekir. |
 
