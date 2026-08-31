@@ -34,5 +34,11 @@ Thumbs.db
 # Prisma
 apps/api/prisma/generated/
 
+# packages/contracts — Hardhat üretilen çıktılar + deploy girdisi
+packages/contracts/artifacts/
+packages/contracts/cache/
+packages/contracts/typechain-types/
+packages/contracts/contract-addresses.json
+
 # TypeScript incremental build cache
 *.tsbuildinfo

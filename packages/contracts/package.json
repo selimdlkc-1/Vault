@@ -1,0 +1,29 @@
+{
+  "name": "@vault/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Mock ERC-20/TRC-20 kontratları + deploy araçları (Faz 4 §4.4a). apps/api'nin RUNTIME bağımlılığı DEĞİLDİR — yalnızca bir deploy aracıdır (docs/mimari-kararlar.md TS-008, docs/adr/0001-mock-contract-tooling.md).",
+  "scripts": {
+    "compile": "hardhat compile",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "deploy:sepolia": "hardhat run scripts/deploy-evm.ts --network sepolia",
+    "deploy:bsc-testnet": "hardhat run scripts/deploy-evm.ts --network bscTestnet",
+    "deploy:tron-shasta": "ts-node scripts/deploy-tron.ts",
+    "write-addresses": "ts-node scripts/write-contract-addresses.ts"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-ethers": "^3.0.8",
+    "@openzeppelin/contracts": "^5.1.0",
+    "@prisma/client": "^5.22.0",
+    "@types/node": "^22.10.0",
+    "@vault/config": "workspace:*",
+    "dotenv": "^16.4.5",
+    "eslint": "^9.17.0",
+    "ethers": "^6.17.0",
+    "hardhat": "^2.22.17",
+    "ts-node": "^10.9.2",
+    "tronweb": "^6.5.0",
+    "typescript": "^5.7.2"
+  }
+}
