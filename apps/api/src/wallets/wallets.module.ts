@@ -3,6 +3,7 @@ import { AuditModule } from "../audit/audit.module";
 import { PriceCacheModule } from "../common/price-cache.module";
 import { MovementsModule } from "../movements/movements.module";
 import { NetworksModule } from "../networks/networks.module";
+import { EnvelopeEncryptionService } from "./envelope-encryption.service";
 import { WalletsController } from "./wallets.controller";
 import { WalletsRepository } from "./wallets.repository";
 import { WalletsService } from "./wallets.service";
@@ -18,11 +19,14 @@ import { WalletsService } from "./wallets.service";
  * `MovementsModule` → `GET /wallets/:id`'in "son 5 chainMovement" alanını
  * `MovementsService.listRecentForWallet` ile doldurmak için (Faz 3 §3.6a —
  * İterasyon 4'te boş bırakılan alan).
+ * `EnvelopeEncryptionService` burada yaşar (ayrı crypto/security modülü yok,
+ * `docs/mimari-kararlar.md` SEC-006) ve dışa aktarılır — Faz 5'in `signing`
+ * worker'ı `WalletsModule`'ü import edip decrypt için bu servisi enjekte eder.
  */
 @Module({
   imports: [AuditModule, NetworksModule, PriceCacheModule, MovementsModule],
   controllers: [WalletsController],
-  providers: [WalletsService, WalletsRepository],
-  exports: [WalletsService],
+  providers: [WalletsService, WalletsRepository, EnvelopeEncryptionService],
+  exports: [WalletsService, EnvelopeEncryptionService],
 })
 export class WalletsModule {}
