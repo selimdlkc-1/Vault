@@ -157,9 +157,10 @@ export const messages = {
   },
   testnetDisclaimer: "testnet varlıkları — gösterge değerdir",
   admin: {
-    // Admin nav'da bu iterasyonda tek link vardır; Mock Mint (Faz 4 §4.4),
-    // Audit Log (Faz 6 §6.3), Kullanıcılar (Faz 6 §6.4) kendi fazlarında eklenir.
+    // Admin nav. Audit Log (Faz 6 §6.3), Kullanıcılar (Faz 6 §6.4) kendi
+    // fazlarında eklenir.
     navNetworkAssets: "Ağ / Varlık Yönetimi",
+    navMint: "Mock Mint",
     networkAssets: {
       // TR metinler docs/06_SCREEN_CATALOG.md §4.4'ten birebir.
       title: "Ağ / Varlık Yönetimi",
@@ -168,6 +169,41 @@ export const messages = {
       readonlyNote: "Mevcut cüzdanlar salt-okunur kalacak.",
       toggleError: "Durum güncellenemedi, lütfen tekrar deneyin.",
       loadError: "Ağ ve varlık listesi yüklenemedi.",
+    },
+    mint: {
+      // TR metinler docs/06_SCREEN_CATALOG.md S-ADMIN-MINT'ten birebir.
+      title: "Mock Token Mint Et",
+      userLabel: "Kullanıcı",
+      userSearchPlaceholder: "E-posta ile ara",
+      userSearchHint: "Aramak için en az 2 karakter girin.",
+      userSearching: "Aranıyor...",
+      userSearchEmpty: "Eşleşen kullanıcı bulunamadı.",
+      userSearchError: "Kullanıcı araması başarısız oldu.",
+      userSelectedPrefix: "Seçili kullanıcı:",
+      userChange: "Değiştir",
+      walletLabel: "Cüzdan",
+      walletPlaceholder: "Cüzdan seçin",
+      walletLoading: "Cüzdanlar yükleniyor...",
+      walletEmpty: "Bu kullanıcının hiç cüzdanı yok.",
+      walletError: "Cüzdan listesi yüklenemedi.",
+      assetLabel: "Varlık",
+      assetPlaceholder: "Varlık seçin",
+      assetLoading: "Varlıklar yükleniyor...",
+      assetEmpty: "Bu ağda mint edilebilir aktif varlık yok.",
+      assetError: "Varlık listesi yüklenemedi.",
+      amountLabel: "Tutar",
+      amountPlaceholder: "0.00",
+      amountInvalid: "Tutar pozitif bir sayı olmalı (ondalık ayracı nokta).",
+      amountTooManyDecimals: "Bu varlık en fazla {decimals} ondalık basamak destekler.",
+      submit: "Mint Et",
+      submitting: "Mint ediliyor...",
+      // Başarı toast'ı: `${tutar} ${sembol} ${mintedSuffix}` olarak birleştirilir.
+      mintedSuffix: "mint edildi.",
+      recentTitle: "Son Mint İşlemleri",
+      recentEmpty: "Bu oturumda henüz mint işlemi yapılmadı.",
+      recentColumnAmount: "Tutar",
+      recentColumnWallet: "Cüzdan",
+      recentColumnTx: "İşlem",
     },
   },
   errorByCode: {
@@ -180,5 +216,9 @@ export const messages = {
     WALLET_ADDRESS_INVALID_FORMAT: "Adres formatı bu ağ için geçerli değil.",
     NETWORK_ASSET_INACTIVE: "Bu ağ şu anda kullanıma kapalı.",
     WALLET_ADDRESS_ALREADY_EXISTS: "Bu adres zaten sisteme kayıtlı.",
+    // S-ADMIN-MINT hata eşlemesi (docs/06 S-ADMIN-MINT).
+    CHAIN_PROVIDER_UNAVAILABLE:
+      "Zincir sağlayıcıya şu anda ulaşılamıyor, lütfen tekrar deneyin.",
+    RESOURCE_NOT_FOUND: "Seçilen cüzdan veya varlık bulunamadı.",
   } as Record<string, string>,
 } as const;

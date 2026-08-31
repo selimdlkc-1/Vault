@@ -17,9 +17,19 @@ export const networkAssetKeys = {
 /** Cüzdan sorguları (`GET /wallets`, `GET /wallets/:id`). */
 export const walletKeys = {
   all: ["wallets"] as const,
-  list: (filters: { networkId?: string; type?: string } = {}) =>
+  list: (filters: { networkId?: string; type?: string; userId?: string } = {}) =>
     [...walletKeys.all, "list", filters] as const,
   detail: (id: string) => [...walletKeys.all, "detail", id] as const,
+};
+
+/**
+ * Admin kullanıcı arama sorguları (`GET /admin/users`). S-ADMIN-MINT'in kullanıcı
+ * seçim alanı (Faz 4 §4.4c) — arama terimi anahtarın parçasıdır, debounce'lanmış
+ * değerle çağrılır.
+ */
+export const adminUserKeys = {
+  all: ["admin-users"] as const,
+  search: (email: string) => [...adminUserKeys.all, "search", email] as const,
 };
 
 /** Hareket geçmişi sorguları (`GET /movements`). */
