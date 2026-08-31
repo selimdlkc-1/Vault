@@ -20,6 +20,9 @@ const ALLOWED_TRANSITIONS: ReadonlyMap<TransferState | null, readonly TransferSt
     // `draft → failed` hedefi İterasyon 3'ün başarısız imzalama senaryosu için
     // burada tanımlanır ama bu iterasyonda tetiklenmez.
     ["draft", ["pending_signature", "failed"]],
+    // İterasyon 3 (§5.3): `signing` worker başarıda `signed`'e, imzalama
+    // hatasında doğrudan `failed`'e geçirir (`docs/01_DOMAIN_MODEL.md` §5.2).
+    ["pending_signature", ["signed", "failed"]],
   ]);
 
 /**
@@ -49,6 +52,18 @@ export class InvalidTransitionError extends Error {
     );
     this.name = "InvalidTransitionError";
   }
+}
+
+/**
+ * `transitionTo()` opsiyonel yan-veri girdisi (İterasyon 3+). `failureReason`
+ * yalnızca `failed` hedefinde `transfers.failure_reason`'a yazılır
+ * (`docs/01_DOMAIN_MODEL.md` §5.2); `metadata` `transfer_state_events` satırına
+ * eklenir (ör. worker'ın sadeleştirilmiş hata nedeni). İterasyon 4 `txHash` için
+ * bu tipi genişletir.
+ */
+export interface TransitionOptions {
+  failureReason?: string;
+  metadata?: Prisma.InputJsonValue;
 }
 
 /** `TransferStateMachine.enter()` girdisi — draft transfer'in tüm alanları. */
@@ -131,6 +146,7 @@ export class TransferStateMachine {
     transferId: string,
     toState: TransferState,
     actor: string,
+    options?: TransitionOptions,
   ): Promise<Transfer> {
     const current = await this.repository.findByIdInTx(tx, transferId);
     if (!current) {
@@ -148,12 +164,18 @@ export class TransferStateMachine {
       throw error;
     }
 
-    const updated = await this.repository.updateState(tx, transferId, toState);
+    const updated =
+      options?.failureReason === undefined
+        ? await this.repository.updateState(tx, transferId, toState)
+        : await this.repository.updateState(tx, transferId, toState, {
+            failureReason: options.failureReason,
+          });
     await this.repository.insertStateEvent(tx, {
       transferId,
       fromState: current.state,
       toState,
       actor,
+      ...(options?.metadata === undefined ? {} : { metadata: options.metadata }),
     });
     return updated;
   }

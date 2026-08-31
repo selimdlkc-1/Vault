@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { getQueueToken } from "@nestjs/bullmq";
 import { type INestApplication } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
@@ -24,6 +25,13 @@ import { TransfersRepository } from "./transfers.repository";
 import { TransfersService } from "./transfers.service";
 import { TransfersThrottlerGuard } from "./transfers-throttler.guard";
 import { TransferStateMachine } from "./transfer-state-machine.service";
+import { SIGNING_QUEUE } from "../workers/signing/signing.queue";
+
+/** `signing` kuyruğu (Faz 5 §5.3) — HTTP testinde iş bırakma no-op'lanır. */
+const signingQueueProvider = {
+  provide: getQueueToken(SIGNING_QUEUE),
+  useValue: { add: jest.fn() },
+};
 
 /**
  * `POST /api/v1/transfers` HTTP akışı uçtan uca (controller → global guard
@@ -177,6 +185,7 @@ describe("TransfersController (integration) — POST /api/v1/transfers", () => {
           },
         },
         { provide: AuditService, useValue: { record: jest.fn() } },
+        signingQueueProvider,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],
@@ -381,6 +390,7 @@ describe("TransfersController (integration) — POST /api/v1/transfers/:id/confi
           useValue: { findNetworkById, isNetworkAssetActive },
         },
         { provide: AuditService, useValue: { record: auditRecord } },
+        signingQueueProvider,
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],

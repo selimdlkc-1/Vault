@@ -1,7 +1,10 @@
+import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
-import { Prisma, type Transfer } from "@prisma/client";
+import { type ChainType, Prisma, type Transfer } from "@prisma/client";
 import { isValidAddress } from "@vault/chain-providers";
 import type { CreateTransferInput, TransferStateValue } from "@vault/types";
+import type { Queue } from "bullmq";
+import { SIGNING_QUEUE } from "../workers/signing/signing.queue";
 import { AuditService } from "../audit/audit.service";
 import { AuthService } from "../auth/auth.service";
 import {
@@ -55,6 +58,22 @@ export interface ConfirmTransferResult {
 }
 
 /**
+ * `signing` worker'ının (Faz 5 §5.3) ham işlem kurmak için ihtiyaç duyduğu
+ * transfer bağlamı — şifreli key materyali hariç (o `WalletsService.getSigningMaterial`'dan
+ * gelir). `state !== 'pending_signature'` ise `getSigningContext` `null` döner
+ * (worker sessizce çıkar — idempotency, `docs/04_BACKEND_SPEC.md` §8).
+ */
+export interface SigningContext {
+  transferId: string;
+  walletId: string;
+  toAddress: string;
+  /** En küçük birimde (wei/sun) BigInt string. */
+  amount: string;
+  chain: { chainType: ChainType; chainId: string };
+  asset: { contractAddress: string | null; decimals: number };
+}
+
+/**
  * Transfer iş mantığı (`.claude/rules/10` service katmanı). Bu iterasyonda
  * yalnızca draft oluşturma yolu var: sahiplik + managed tip kontrolü
  * (`WalletsService`), istemci-tarafı idempotency, ve `TransferStateMachine.enter()`.
@@ -84,6 +103,11 @@ export class TransfersService {
     // `TRANSFER_STATE_CHANGED` audit kaydı, geçişle aynı `$transaction` içinde
     // (`docs/04_BACKEND_SPEC.md` §7).
     private readonly audit: AuditService,
+    // İterasyon 3 (§5.3): `confirm()` `pending_signature`'a geçtikten sonra
+    // `signing` kuyruğuna iş bırakır (`docs/04_BACKEND_SPEC.md` §8). Kuyruk
+    // `TransfersModule`'de `BullModule.registerQueue({ name: 'signing' })` ile
+    // kayıtlı; processor ayrı `SigningQueueModule`'de yaşar.
+    @InjectQueue(SIGNING_QUEUE) private readonly signingQueue: Queue,
   ) {}
 
   /**
@@ -240,7 +264,46 @@ export class TransfersService {
       return result;
     });
 
+    // Geçiş commit oldu → `signing` kuyruğuna iş bırak (`docs/04_BACKEND_SPEC.md`
+    // §8 akış diyagramı: `$transaction` → `signing` job → HTTP 200). Job id
+    // `${transferId}:signed` bileşik anahtarı (`docs/mimari-kararlar.md` I-005) —
+    // aynı anahtarla ikinci job BullMQ deduplication ile yok sayılır (istemci
+    // retry / eşzamanlı confirm çift imzalama tetikleyemez).
+    await this.signingQueue.add(
+      "sign",
+      { transferId },
+      { jobId: `${transferId}:signed` },
+    );
+
     return { state: updated.state };
+  }
+
+  /**
+   * `signing` worker'ı (Faz 5 §5.3) için transfer + ağ/varlık bağlamı. Transfer
+   * yok **veya** `state !== 'pending_signature'` ise `null` — worker bunu "zaten
+   * işlenmiş / terminal" olarak yorumlar ve hiçbir yan etki üretmeden çıkar
+   * (`docs/04_BACKEND_SPEC.md` §8 idempotency). Şifreli key materyali burada
+   * dönmez (`WalletsService.getSigningMaterial`).
+   */
+  async getSigningContext(transferId: string): Promise<SigningContext | null> {
+    const transfer = await this.repository.findByIdForSigning(transferId);
+    if (!transfer || transfer.state !== "pending_signature") {
+      return null;
+    }
+    return {
+      transferId: transfer.id,
+      walletId: transfer.walletId,
+      toAddress: transfer.toAddress,
+      amount: transfer.amount,
+      chain: {
+        chainType: transfer.network.chainType,
+        chainId: transfer.network.chainId,
+      },
+      asset: {
+        contractAddress: transfer.asset.contractAddress,
+        decimals: transfer.asset.decimals,
+      },
+    };
   }
 
   private toView(transfer: Transfer): TransferView {

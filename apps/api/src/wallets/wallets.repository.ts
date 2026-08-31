@@ -139,6 +139,34 @@ export class WalletsRepository {
   }
 
   /**
+   * Managed cüzdanın imzalama materyali (`signing` worker'ı, Faz 5 §5.3):
+   * gönderen adres + iki katmanlı envelope ciphertext'leri. Bu iki kolon
+   * (`encrypted_private_key`/`encrypted_dek`) sistemde **yalnızca** burada select
+   * edilir (`docs/02_DATABASE_SCHEMA.md` §6). Watch-only cüzdanda `NULL` olurlar;
+   * çağıran (`WalletsService.getSigningMaterial`) managed olmayan / eksik materyali
+   * reddeder. Bulunamazsa `null`.
+   */
+  findSigningMaterial(
+    walletId: string,
+  ): Promise<
+    Pick<
+      Wallet,
+      "id" | "type" | "address" | "encryptedPrivateKey" | "encryptedDek"
+    > | null
+  > {
+    return this.prisma.wallet.findUnique({
+      where: { id: walletId },
+      select: {
+        id: true,
+        type: true,
+        address: true,
+        encryptedPrivateKey: true,
+        encryptedDek: true,
+      },
+    });
+  }
+
+  /**
    * `(network, address)` benzersizlik ön kontrolü — deterministik `409`
    * (`WALLET_ADDRESS_ALREADY_EXISTS`) için. Yarış durumunda DB `P2002` yine
    * `AllExceptionsFilter`'da aynı koda eşlenir.

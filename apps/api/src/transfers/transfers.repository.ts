@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import type { Prisma, Transfer, TransferState } from "@prisma/client";
+import type { ChainType, Prisma, Transfer, TransferState } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -8,6 +8,15 @@ import { PrismaService } from "../prisma/prisma.service";
  * (Faz 5 §5.2) sahiplik kontrolü + guard girdileri için bunu okur.
  */
 export type TransferWithOwner = Transfer & { wallet: { userId: string } };
+
+/**
+ * Transfer + `signing` worker'ının ham işlem kurması için gereken ağ/varlık
+ * bağlamı (Faz 5 §5.3). `contractAddress === null` → native coin transferi.
+ */
+export type TransferWithChainContext = Transfer & {
+  network: { chainType: ChainType; chainId: string };
+  asset: { contractAddress: string | null; decimals: number };
+};
 
 /**
  * `transfers` insert girdisi (`docs/02_DATABASE_SCHEMA.md` §2.7). `state` alanı
@@ -114,18 +123,45 @@ export class TransfersRepository {
   }
 
   /**
-   * `transfers.state`'i çağıranın `$transaction`'ı içinde günceller. Yalnızca
-   * `TransferStateMachine` çağırır (`.claude/rules/13-critical-modules.md` kesin
-   * kural — bu alana başka hiçbir kod yolu `UPDATE` uygulamaz).
+   * `transfers.state`'i (ve `failed` geçişlerinde `failure_reason`'ı) çağıranın
+   * `$transaction`'ı içinde günceller. Yalnızca `TransferStateMachine` çağırır
+   * (`.claude/rules/13-critical-modules.md` kesin kural — bu alana başka hiçbir
+   * kod yolu `UPDATE` uygulamaz). `extra.failureReason` verilmezse `failure_reason`
+   * dokunulmaz (mevcut değeri korunur).
    */
   updateState(
     tx: Prisma.TransactionClient,
     transferId: string,
     state: TransferState,
+    extra?: { failureReason?: string },
   ): Promise<Transfer> {
     return tx.transfer.update({
       where: { id: transferId },
-      data: { state },
+      data: {
+        state,
+        ...(extra?.failureReason !== undefined
+          ? { failureReason: extra.failureReason }
+          : {}),
+      },
+    });
+  }
+
+  /**
+   * `signing` worker'ı için transfer + ağ (`chain_type`/`chain_id`) + varlık
+   * (`contract_address`/`decimals`) bağlamı tek sorguda (Faz 5 §5.3). Cüzdanın
+   * şifreli key materyali burada **okunmaz** — o, `WalletsService.getSigningMaterial`
+   * üzerinden `WalletsModule`'den alınır (modül sahipliği, `.claude/rules/10`).
+   * Bulunamazsa `null`.
+   */
+  findByIdForSigning(
+    transferId: string,
+  ): Promise<TransferWithChainContext | null> {
+    return this.prisma.transfer.findUnique({
+      where: { id: transferId },
+      include: {
+        network: { select: { chainType: true, chainId: true } },
+        asset: { select: { contractAddress: true, decimals: true } },
+      },
     });
   }
 

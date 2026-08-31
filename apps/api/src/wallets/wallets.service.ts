@@ -431,6 +431,40 @@ export class WalletsService {
   }
 
   /**
+   * `signing` worker'ı için managed cüzdanın imzalama materyali (Faz 5 §5.3 —
+   * worker `WalletsModule`'ü import edip bu servisi enjekte eder,
+   * `docs/04_BACKEND_SPEC.md` §2). Cüzdan yoksa `RESOURCE_NOT_FOUND`; `managed`
+   * değil veya envelope ciphertext'leri eksikse `WALLET_NOT_MANAGED` — her ikisi
+   * de worker'da kalıcı hata olarak `failed`'e düşer.
+   *
+   * Güvenlik sınırı (`.claude/rules/03-security-baseline.md` madde 1): dönen
+   * ciphertext'ler yalnızca çağıranın (`SigningProcessor`) bellek-içi decrypt
+   * akışına gider; `WalletView` benzeri hiçbir API yanıtına bu alanlar konmaz.
+   */
+  async getSigningMaterial(walletId: string): Promise<{
+    address: string;
+    encryptedPrivateKey: string;
+    encryptedDek: string;
+  }> {
+    const wallet = await this.repository.findSigningMaterial(walletId);
+    if (!wallet) {
+      throw new ResourceNotFoundException("Cüzdan bulunamadı.");
+    }
+    if (
+      wallet.type !== "managed" ||
+      wallet.encryptedPrivateKey === null ||
+      wallet.encryptedDek === null
+    ) {
+      throw new WalletNotManagedException();
+    }
+    return {
+      address: wallet.address,
+      encryptedPrivateKey: wallet.encryptedPrivateKey,
+      encryptedDek: wallet.encryptedDek,
+    };
+  }
+
+  /**
    * Bir `(wallet, asset)` çiftinin önbelleğe alınmış bakiyesi, en küçük birimde
    * `BigInt` olarak (Faz 5 §5.2 — `TransfersService.confirm` bakiye yeterliliği
    * kontrolü). Kayıt yoksa `0n`. `BigInt` döner, asla JS `number`
