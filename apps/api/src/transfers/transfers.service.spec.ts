@@ -72,6 +72,7 @@ describe("TransfersService.createDraft", () => {
   let stateMachine: jest.Mocked<Pick<TransferStateMachine, "enter">>;
   let walletsService: jest.Mocked<Pick<WalletsService, "findOwnedManagedWallet">>;
   let prisma: { $transaction: jest.Mock };
+  let signingQueue: { add: jest.Mock };
   let service: TransfersService;
 
   beforeEach(() => {
@@ -91,6 +92,7 @@ describe("TransfersService.createDraft", () => {
     prisma = {
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb({ __tx: true })),
     };
+    signingQueue = { add: jest.fn().mockResolvedValue(undefined) };
     service = new TransfersService(
       repository as unknown as TransfersRepository,
       stateMachine as unknown as TransferStateMachine,
@@ -99,6 +101,7 @@ describe("TransfersService.createDraft", () => {
       {} as unknown as AuthService,
       {} as unknown as NetworksService,
       {} as unknown as AuditService,
+      signingQueue as never,
     );
   });
 
@@ -198,6 +201,7 @@ describe("TransfersService.confirm — step-up + cross-network guard (§5.2)", (
   >;
   let audit: jest.Mocked<Pick<AuditService, "record">>;
   let prisma: { $transaction: jest.Mock };
+  let signingQueue: { add: jest.Mock };
   let service: TransfersService;
 
   const TX = { __tx: true };
@@ -231,6 +235,7 @@ describe("TransfersService.confirm — step-up + cross-network guard (§5.2)", (
     prisma = {
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(TX)),
     };
+    signingQueue = { add: jest.fn().mockResolvedValue(undefined) };
     service = new TransfersService(
       repository as unknown as TransfersRepository,
       stateMachine as unknown as TransferStateMachine,
@@ -239,6 +244,7 @@ describe("TransfersService.confirm — step-up + cross-network guard (§5.2)", (
       authService as unknown as AuthService,
       networksService as unknown as NetworksService,
       audit as unknown as AuditService,
+      signingQueue as never,
     );
   });
 
@@ -264,6 +270,25 @@ describe("TransfersService.confirm — step-up + cross-network guard (§5.2)", (
       metadata: { fromState: "draft", toState: "pending_signature" },
     });
     expect(result).toEqual({ state: "pending_signature" });
+  });
+
+  it("geçiş commit olunca signing kuyruğuna {transferId} job'u eklenir (jobId = ${id}:signed)", async () => {
+    await service.confirm(USER_ID, TRANSFER_ID, "correct-horse");
+
+    expect(signingQueue.add).toHaveBeenCalledWith(
+      "sign",
+      { transferId: TRANSFER_ID },
+      { jobId: `${TRANSFER_ID}:signed` },
+    );
+  });
+
+  it("guard reddinde signing kuyruğuna hiçbir şey eklenmez", async () => {
+    authService.verifyPassword.mockResolvedValue(false);
+
+    await expect(
+      service.confirm(USER_ID, TRANSFER_ID, "wrong"),
+    ).rejects.toBeInstanceOf(AuthStepUpRequiredException);
+    expect(signingQueue.add).not.toHaveBeenCalled();
   });
 
   it("sahiplik: transfer başka kullanıcıya aitse FORBIDDEN_NOT_OWNER, hiçbir guard çalışmaz", async () => {
@@ -365,5 +390,62 @@ describe("TransfersService.confirm — step-up + cross-network guard (§5.2)", (
     await expect(
       service.confirm(USER_ID, TRANSFER_ID, "correct-horse"),
     ).resolves.toEqual({ state: "pending_signature" });
+  });
+});
+
+describe("TransfersService.getSigningContext (§5.3 — signing worker)", () => {
+  let repository: jest.Mocked<Pick<TransfersRepository, "findByIdForSigning">>;
+  let service: TransfersService;
+
+  function chainRow(overrides: Partial<Transfer> = {}) {
+    return {
+      ...transferRow({ state: "pending_signature", ...overrides }),
+      network: { chainType: "evm" as const, chainId: "11155111" },
+      asset: { contractAddress: null, decimals: 18 },
+    };
+  }
+
+  beforeEach(() => {
+    repository = {
+      findByIdForSigning: jest.fn().mockResolvedValue(chainRow()),
+    };
+    service = new TransfersService(
+      repository as unknown as TransfersRepository,
+      {} as unknown as TransferStateMachine,
+      {} as unknown as PrismaService,
+      {} as unknown as WalletsService,
+      {} as unknown as AuthService,
+      {} as unknown as NetworksService,
+      {} as unknown as AuditService,
+      { add: jest.fn() } as never,
+    );
+  });
+
+  it("pending_signature: transfer + ağ/varlık bağlamını döner (key materyali hariç)", async () => {
+    const ctx = await service.getSigningContext(TRANSFER_ID);
+
+    expect(ctx).toEqual({
+      transferId: TRANSFER_ID,
+      walletId: WALLET_ID,
+      toAddress: EVM_ADDRESS,
+      amount: "1000",
+      chain: { chainType: "evm", chainId: "11155111" },
+      asset: { contractAddress: null, decimals: 18 },
+    });
+  });
+
+  it("state pending_signature değilse null (worker idempotent no-op)", async () => {
+    repository.findByIdForSigning.mockResolvedValue(chainRow({ state: "signed" }));
+    await expect(service.getSigningContext(TRANSFER_ID)).resolves.toBeNull();
+  });
+
+  it("terminal durumda null", async () => {
+    repository.findByIdForSigning.mockResolvedValue(chainRow({ state: "failed" }));
+    await expect(service.getSigningContext(TRANSFER_ID)).resolves.toBeNull();
+  });
+
+  it("transfer yoksa null", async () => {
+    repository.findByIdForSigning.mockResolvedValue(null);
+    await expect(service.getSigningContext(TRANSFER_ID)).resolves.toBeNull();
   });
 });

@@ -184,4 +184,64 @@ describe("TransferStateMachine.transitionTo (İterasyon 2 — §5.2)", () => {
       machine.transitionTo(TX as never, "abc", "pending_signature", "user"),
     ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
   });
+
+  // --- İterasyon 3 (§5.3): pending_signature → signed / failed ---
+
+  it("pending_signature → signed: worker:signing aktörüyle geçiş, failure_reason'a dokunulmaz", async () => {
+    repository.findByIdInTx.mockResolvedValue(
+      transferRow({ state: "pending_signature" }),
+    );
+    repository.updateState.mockResolvedValue(transferRow({ state: "signed" }));
+
+    const result = await machine.transitionTo(
+      TX as never,
+      "abc",
+      "signed",
+      "worker:signing",
+    );
+
+    // failureReason verilmedi → updateState 3 argümanla çağrılır (kolon korunur).
+    expect(repository.updateState).toHaveBeenCalledWith(TX, "abc", "signed");
+    expect(repository.insertStateEvent).toHaveBeenCalledWith(TX, {
+      transferId: "abc",
+      fromState: "pending_signature",
+      toState: "signed",
+      actor: "worker:signing",
+    });
+    expect(result.state).toBe("signed");
+  });
+
+  it("pending_signature → failed: failureReason kolona yazılır, metadata state event'e eklenir", async () => {
+    repository.findByIdInTx.mockResolvedValue(
+      transferRow({ state: "pending_signature" }),
+    );
+    repository.updateState.mockResolvedValue(
+      transferRow({ state: "failed", failureReason: "İmzalama başarısız oldu." }),
+    );
+
+    await machine.transitionTo(TX as never, "abc", "failed", "worker:signing", {
+      failureReason: "İmzalama başarısız oldu.",
+      metadata: { step: "signing" },
+    });
+
+    expect(repository.updateState).toHaveBeenCalledWith(TX, "abc", "failed", {
+      failureReason: "İmzalama başarısız oldu.",
+    });
+    expect(repository.insertStateEvent).toHaveBeenCalledWith(TX, {
+      transferId: "abc",
+      fromState: "pending_signature",
+      toState: "failed",
+      actor: "worker:signing",
+      metadata: { step: "signing" },
+    });
+  });
+
+  it("signed durumundan signing geçişi tekrar denenirse → TRANSFER_INVALID_TRANSITION (worker idempotency guard'a güvenir)", async () => {
+    repository.findByIdInTx.mockResolvedValue(transferRow({ state: "signed" }));
+
+    await expect(
+      machine.transitionTo(TX as never, "abc", "signed", "worker:signing"),
+    ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
+    expect(repository.updateState).not.toHaveBeenCalled();
+  });
 });

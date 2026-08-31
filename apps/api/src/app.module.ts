@@ -17,6 +17,7 @@ import { BalanceSyncModule } from "./workers/balance-sync/balance-sync.module";
 import { MovementIndexModule } from "./workers/movement-index/movement-index.module";
 import { PortfolioSnapshotModule } from "./workers/portfolio-snapshot/portfolio-snapshot.module";
 import { PriceSyncModule } from "./workers/price-sync/price-sync.module";
+import { SigningQueueModule } from "./workers/signing/signing-queue.module";
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { PriceSyncModule } from "./workers/price-sync/price-sync.module";
     PriceSyncModule,
     PortfolioSnapshotModule,
     MovementIndexModule,
+    SigningQueueModule,
   ],
   controllers: [],
   providers: [

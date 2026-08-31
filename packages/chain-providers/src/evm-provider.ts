@@ -1,4 +1,4 @@
-import { Contract, HDNodeWallet, JsonRpcProvider, Wallet } from "ethers";
+import { Contract, HDNodeWallet, Interface, JsonRpcProvider, Wallet } from "ethers";
 
 import { MOCK_ERC20_ABI } from "./abi/mock-erc20.abi";
 import { assertChainIdAllowed } from "./chain-id-allowlist";
@@ -13,6 +13,7 @@ import type {
   DerivedWallet,
   IChainProvider,
   MintResult,
+  RawTransactionInput,
 } from "./i-chain-provider";
 
 /**
@@ -32,6 +33,11 @@ export interface EvmNetworkConfig {
  */
 const ERC20_BALANCE_OF_ABI = [
   "function balanceOf(address owner) view returns (uint256)",
+] as const;
+
+/** ERC-20 `transfer` — `signTransaction` token transferinde `data`'yı bununla encode eder. */
+const ERC20_TRANSFER_ABI = [
+  "function transfer(address to, uint256 amount) returns (bool)",
 ] as const;
 
 export class EvmProvider implements IChainProvider {
@@ -75,6 +81,43 @@ export class EvmProvider implements IChainProvider {
       derivationPath(EVM_COIN_TYPE, index),
     );
     return { address: node.address, privateKey: node.privateKey };
+  }
+
+  /**
+   * `input`'tan bir EVM işlemi kurar ve `privateKey` ile imzalar (Faz 5 §5.3).
+   * Native coin → `{ to, value }`; ERC-20 → kontrata `transfer(to, amount)`
+   * çağrısını taşıyan `{ to: contract, data }`. `Wallet.populateTransaction`
+   * eksik alanları (`nonce`, `gasLimit`, fee, `chainId`) RPC'den doldurur; bu bir
+   * durum değiştiren zincir çağrısı değildir. `signTransaction` imzalı ham hex'i
+   * döner, ağa **göndermez** (broadcast Faz 5 §5.4). Hata `ChainProviderUnavailableException`'a
+   * sarılır — `signing` worker'ı bunu `failed`'e çevirir.
+   */
+  async signTransaction(
+    privateKey: string,
+    input: RawTransactionInput,
+  ): Promise<string> {
+    try {
+      const wallet = new Wallet(privateKey, this.rpc);
+      const request =
+        input.asset.contractAddress === null
+          ? { to: input.to, value: BigInt(input.amount) }
+          : {
+              to: input.asset.contractAddress,
+              data: new Interface(ERC20_TRANSFER_ABI).encodeFunctionData(
+                "transfer",
+                [input.to, BigInt(input.amount)],
+              ),
+            };
+      const populated = await wallet.populateTransaction({
+        ...request,
+        from: input.from,
+      });
+      return await wallet.signTransaction(populated);
+    } catch (error) {
+      throw new ChainProviderUnavailableException("EvmProvider.signTransaction", {
+        cause: error,
+      });
+    }
   }
 
   broadcastTransaction(): Promise<BroadcastResult> {

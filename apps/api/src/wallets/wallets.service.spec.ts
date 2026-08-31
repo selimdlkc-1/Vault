@@ -428,6 +428,78 @@ describe("WalletsService — balance-sync destek metotları", () => {
   });
 });
 
+describe("WalletsService.getSigningMaterial (Faz 5 §5.3)", () => {
+  let repository: jest.Mocked<Pick<WalletsRepository, "findSigningMaterial">>;
+  let service: WalletsService;
+
+  beforeEach(() => {
+    repository = { findSigningMaterial: jest.fn() };
+    service = new WalletsService(
+      repository as unknown as WalletsRepository,
+      {} as unknown as NetworksService,
+      {} as unknown as PrismaService,
+      {} as unknown as AuditService,
+      fakePriceCache(),
+      fakeMovements(),
+      {} as unknown as ConfigService<EnvConfig, true>,
+      {} as unknown as ChainProviderFactory,
+      {} as unknown as EnvelopeEncryptionService,
+    );
+  });
+
+  it("managed cüzdan: adres + iki envelope ciphertext'ini döner", async () => {
+    repository.findSigningMaterial.mockResolvedValue({
+      id: "w1",
+      type: "managed",
+      address: VALID_EVM,
+      encryptedPrivateKey: "enc-pk",
+      encryptedDek: "enc-dek",
+    });
+
+    await expect(service.getSigningMaterial("w1")).resolves.toEqual({
+      address: VALID_EVM,
+      encryptedPrivateKey: "enc-pk",
+      encryptedDek: "enc-dek",
+    });
+  });
+
+  it("cüzdan yoksa RESOURCE_NOT_FOUND", async () => {
+    repository.findSigningMaterial.mockResolvedValue(null);
+
+    await expect(service.getSigningMaterial("w1")).rejects.toMatchObject({
+      code: "RESOURCE_NOT_FOUND",
+    });
+  });
+
+  it("watch-only cüzdan (materyal NULL) → WALLET_NOT_MANAGED", async () => {
+    repository.findSigningMaterial.mockResolvedValue({
+      id: "w1",
+      type: "watch_only",
+      address: VALID_EVM,
+      encryptedPrivateKey: null,
+      encryptedDek: null,
+    });
+
+    await expect(service.getSigningMaterial("w1")).rejects.toMatchObject({
+      code: "WALLET_NOT_MANAGED",
+    });
+  });
+
+  it("managed ama ciphertext eksikse → WALLET_NOT_MANAGED (bozuk kayıt)", async () => {
+    repository.findSigningMaterial.mockResolvedValue({
+      id: "w1",
+      type: "managed",
+      address: VALID_EVM,
+      encryptedPrivateKey: "enc-pk",
+      encryptedDek: null,
+    });
+
+    await expect(service.getSigningMaterial("w1")).rejects.toMatchObject({
+      code: "WALLET_NOT_MANAGED",
+    });
+  });
+});
+
 // Faz 3 §3.4a — cüzdan okuma endpoint'lerinin rol/sahiplik dallanmaları.
 describe("WalletsService — cüzdan okuma (listWallets / getWalletById)", () => {
   const ADMIN_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";

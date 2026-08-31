@@ -10,6 +10,7 @@ export type {
   DerivedWallet,
   IChainProvider,
   MintResult,
+  RawTransactionInput,
 } from "./i-chain-provider";
 export { MOCK_ERC20_ABI, MOCK_TRC20_ABI } from "./abi/mock-erc20.abi";
 export { isValidAddress } from "./address-validator";

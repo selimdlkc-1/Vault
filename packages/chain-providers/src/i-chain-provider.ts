@@ -22,6 +22,24 @@ export interface BroadcastResult {
   readonly txHash: string;
 }
 
+/**
+ * `signing` worker'ının `IChainProvider.signTransaction()`'a geçirdiği ağ-agnostik
+ * transfer tanımı (Faz 5 §5.3). Ağa özel ham işlem yapısı (EVM `TransactionRequest`,
+ * Tron `transactionBuilder` çıktısı) implementasyonun içinde kurulur — worker bu
+ * ayrıntıyı bilmez. `asset.contractAddress === null` → native coin transferi
+ * (ETH/BNB/TRX); dolu → ERC-20/TRC-20 `transfer(to, amount)` çağrısı.
+ */
+export interface RawTransactionInput {
+  /** Gönderen managed cüzdanın adresi. */
+  readonly from: string;
+  /** Kullanıcının girdiği hedef adres. */
+  readonly to: string;
+  /** Transfer tutarı, en küçük birimde (wei/sun) BigInt string — asla JS `number`. */
+  readonly amount: string;
+  /** Transfer edilen varlık; `contractAddress === null` ise native coin. */
+  readonly asset: AssetRef;
+}
+
 export interface MintResult {
   /** Mock kontratın `mint()` çağrısının onaylanmış işlem hash'i. */
   readonly txHash: string;
@@ -61,7 +79,18 @@ export interface IChainProvider {
   deriveWallet(mnemonic: string, index: number): DerivedWallet;
 
   /**
-   * İmzalı ham işlemi zincire yayınlar ve tx hash'ini döner. Faz 5 dolduracak.
+   * `input`'tan ağa özel bir ham işlem kurar, `privateKey` ile imzalar ve imzalı
+   * ham işlemi (EVM: `0x`-önekli hex; Tron: serialize edilmiş imzalı işlem JSON'ı)
+   * döner — **ağa göndermez** (`docs/01_DOMAIN_MODEL.md` §5.2 `pending_signature →
+   * signed`). `signing` worker'ı çağırır; `privateKey` yalnızca çağrı süresince
+   * bellekte tutulur, hiçbir log'a yazılmaz (`.claude/rules/03-security-baseline.md`
+   * madde 1). İmzalama başarısızsa `ChainProviderUnavailableException` fırlatır —
+   * worker bunu doğrudan `failed`'e çevirir (BullMQ retry yok, `docs/01` §5.2).
+   */
+  signTransaction(privateKey: string, input: RawTransactionInput): Promise<string>;
+
+  /**
+   * İmzalı ham işlemi zincire yayınlar ve tx hash'ini döner. Faz 5 §5.4 dolduracak.
    */
   broadcastTransaction(signedTxHex: string): Promise<BroadcastResult>;
 

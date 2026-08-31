@@ -14,6 +14,7 @@ import type {
   DerivedWallet,
   IChainProvider,
   MintResult,
+  RawTransactionInput,
 } from "./i-chain-provider";
 
 /**
@@ -94,6 +95,55 @@ export class TronProvider implements IChainProvider {
       throw new Error("Tron adresi türetilemedi (geçersiz private key).");
     }
     return { address, privateKey };
+  }
+
+  /**
+   * `input`'tan bir Tron işlemi kurar ve `privateKey` ile imzalar (Faz 5 §5.3).
+   * Native TRX → `transactionBuilder.sendTrx`; TRC-20 → `transfer(address,uint256)`
+   * için `triggerSmartContract`. İmzalama, paylaşılan `tronWeb` mutate edilmeden
+   * private key'li ayrı bir `TronWeb` örneğiyle yapılır (`mintToken` kalıbı).
+   * `trx.sign` imzalı işlem nesnesini döner; serialize edilmiş JSON'ı döndürülür —
+   * ağa **gönderilmez** (broadcast Faz 5 §5.4). Hata `ChainProviderUnavailableException`'a
+   * sarılır — `signing` worker'ı bunu `failed`'e çevirir.
+   */
+  async signTransaction(
+    privateKey: string,
+    input: RawTransactionInput,
+  ): Promise<string> {
+    try {
+      const signer = new TronWeb({ fullHost: this.fullHost, privateKey });
+
+      let unsigned;
+      if (input.asset.contractAddress === null) {
+        // `sendTrx` sun tutarını `number` bekler — tronweb SDK sınırı; testnet
+        // demo tutarları güvenli tamsayı aralığındadır (P-015 sınır notu).
+        unsigned = await signer.transactionBuilder.sendTrx(
+          input.to,
+          Number(input.amount),
+          input.from,
+        );
+      } else {
+        const wrapper = await signer.transactionBuilder.triggerSmartContract(
+          input.asset.contractAddress,
+          "transfer(address,uint256)",
+          {},
+          [
+            { type: "address", value: input.to },
+            { type: "uint256", value: input.amount },
+          ],
+          input.from,
+        );
+        unsigned = wrapper.transaction;
+      }
+
+      const signed = await signer.trx.sign(unsigned, privateKey);
+      return JSON.stringify(signed);
+    } catch (error) {
+      throw new ChainProviderUnavailableException(
+        "TronProvider.signTransaction",
+        { cause: error },
+      );
+    }
   }
 
   broadcastTransaction(): Promise<BroadcastResult> {

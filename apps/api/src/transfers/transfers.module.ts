@@ -1,9 +1,11 @@
+import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
 import { ThrottlerGuard } from "@nestjs/throttler";
 import { AuditModule } from "../audit/audit.module";
 import { AuthModule } from "../auth/auth.module";
 import { NetworksModule } from "../networks/networks.module";
 import { WalletsModule } from "../wallets/wallets.module";
+import { SIGNING_QUEUE } from "../workers/signing/signing.queue";
 import { TransfersController } from "./transfers.controller";
 import { TransfersRepository } from "./transfers.repository";
 import { TransfersService } from "./transfers.service";
@@ -33,7 +35,16 @@ import { TransferStateMachine } from "./transfer-state-machine.service";
   // (`AuthService.verifyPassword`); `NetworksModule` → cross-network guard'ın ağ
   // `chainType`'ı + `(network, asset)` aktiflik tekrar kontrolü; `AuditModule` →
   // `TRANSFER_STATE_CHANGED` yazımı (geçişle aynı `$transaction`).
-  imports: [WalletsModule, AuthModule, NetworksModule, AuditModule],
+  imports: [
+    WalletsModule,
+    AuthModule,
+    NetworksModule,
+    AuditModule,
+    // İterasyon 3 (§5.3): `TransfersService.confirm()` `signing` kuyruğuna iş
+    // bırakır. Kuyruk processor'ı ayrı `SigningQueueModule`'de yaşar; burada
+    // yalnızca `Queue` provider'ını enjekte edebilmek için register edilir.
+    BullModule.registerQueue({ name: SIGNING_QUEUE }),
+  ],
   controllers: [TransfersController],
   providers: [
     TransfersService,
