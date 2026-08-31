@@ -179,6 +179,21 @@ export class WalletAddressAlreadyExistsException extends DomainException {
 }
 
 /**
+ * `409 WALLET_NOT_MANAGED` — watch-only bir cüzdandan transfer başlatılmaya
+ * çalışıldı (`docs/03_API_CONTRACTS.md` §3/§5.4, `docs/01_DOMAIN_MODEL.md` §4
+ * madde 5, `docs/08_TESTING_STRATEGY.md` §4 senaryo). Watch-only cüzdanın private
+ * key'i sistemde olmadığından hiçbir `Transfer` kaydında gönderen taraf olamaz.
+ */
+export class WalletNotManagedException extends DomainException {
+  readonly code = "WALLET_NOT_MANAGED";
+  readonly httpStatus = 409;
+
+  constructor() {
+    super("Bu cüzdandan transfer başlatılamaz; yalnızca yönetilen cüzdanlar transfer yapabilir.");
+  }
+}
+
+/**
  * `401` — `POST /webhooks/alchemy` çağrısında `X-Alchemy-Signature` HMAC
  * doğrulaması başarısız (`docs/03_API_CONTRACTS.md` §8). İmza doğrulanmadan
  * hiçbir DB yazımı yapılmaz (`.claude/rules/03-security-baseline.md` — state

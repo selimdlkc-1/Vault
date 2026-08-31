@@ -124,6 +124,7 @@ Constraint: `(wallet_id, asset_id)` bileşik `PRIMARY KEY`.
 | `state` | `transfer_state` enum | ❌ | `'draft'` | 8 durumlu state machine (bkz. `01_DOMAIN_MODEL.md §5.2` — bu dokümanda yalnızca kolon tanımı) |
 | `tx_hash` | TEXT | ✅ | `NULL` | `broadcast` durumuna geçince doldurulur |
 | `failure_reason` | TEXT | ✅ | `NULL` | Sadeleştirilmiş hata metni; `failed`/`dropped` durumunda doldurulur |
+| `idempotency_key` | TEXT | ✅ | `NULL` | İstemcinin `POST /transfers` ile gönderdiği `Idempotency-Key` header'ı (UUID). `(wallet_id, idempotency_key)` UNIQUE — aynı anahtarla çift gönderim/retry ikinci bir transfer oluşturamaz (`03_API_CONTRACTS.md §7`, `mimari-kararlar.md` W-004). 24 saatlik TTL sorgu anında `created_at`'e göre değerlendirilir (cron yoktur). |
 | `created_at` | TIMESTAMPTZ | ❌ | `now()` | |
 | `updated_at` | TIMESTAMPTZ | ❌ | `now()` | Her state geçişinde güncellenir |
 
@@ -384,6 +385,7 @@ Tüm sabit değer kümeleri Postgres native enum tipi olarak tanımlanır (appli
 | `transfers_wallet_id_idx` | `transfers` | `wallet_id` | Bir cüzdanın transfer geçmişini listelemek |
 | `transfers_state_idx` | `transfers` | `state` | Confirmation worker'ın `broadcast`/`confirming` durumundaki transferleri taraması |
 | `transfers_tx_hash_idx` | `transfers` | `tx_hash` | `ChainMovement` ile tekilleştirme eşleşmesi (`txHash` üzerinden lookup) |
+| `transfers_wallet_id_idempotency_key_key` | `transfers` | `(wallet_id, idempotency_key)` UNIQUE | İstemci-tarafı idempotency: aynı `Idempotency-Key` ile çift gönderim ikinci bir transfer oluşturamaz (`03_API_CONTRACTS.md §7`). `NULL` anahtarlar çakışmaz (Postgres NULLS DISTINCT). |
 | `transfer_state_events_transfer_id_idx` | `transfer_state_events` | `transfer_id` | Bir transferin tam denetim izini zaman sırasıyla çekmek |
 | `chain_movements_wallet_id_occurred_at_idx` | `chain_movements` | `(wallet_id, occurred_at DESC)` | Hareket geçmişi ekranının cüzdan + tarih filtreleme paterni |
 | `chain_movements_tx_hash_idx` | `chain_movements` | `tx_hash` | Sistem transferi tekilleştirme eşleşmesi |

@@ -62,6 +62,23 @@ enum MovementDirection {
   @@map("movement_direction")
 }
 
+/// docs/01_DOMAIN_MODEL.md §5.2 — transfer durum makinesinin 8 durumu; üçü
+/// terminaldir (`confirmed`/`failed`/`dropped`). Postgres enum tipi yalnızca
+/// geçersiz string'i engeller; izin verilen geçiş mantığı `TransferStateMachine`
+/// servisindedir (`.claude/rules/13-critical-modules.md`, mimari-kararlar W-004).
+enum TransferState {
+  draft
+  pending_signature
+  signed
+  broadcast
+  confirming
+  confirmed
+  failed
+  dropped
+
+  @@map("transfer_state")
+}
+
 /// docs/02_DATABASE_SCHEMA.md §2.1
 model User {
   id           String   @id @default(uuid()) @db.Uuid
@@ -107,6 +124,7 @@ model Network {
   assets        Asset[]
   networkAssets NetworkAsset[]
   wallets       Wallet[]
+  transfers     Transfer[]
 
   @@map("networks")
 }
@@ -126,6 +144,7 @@ model Asset {
   balanceCaches  BalanceCache[]
   chainMovements ChainMovement[]
   mintOperations MintOperation[]
+  transfers      Transfer[]
 
   @@unique([networkId, symbol])
   @@map("assets")
@@ -172,6 +191,7 @@ model Wallet {
   balanceCaches  BalanceCache[]
   chainMovements ChainMovement[]
   mintOperations MintOperation[]
+  transfers      Transfer[]
 
   @@unique([networkId, address])
   @@index([userId], map: "wallets_user_id_idx")
@@ -266,6 +286,71 @@ model MintOperation {
 
   @@index([walletId], map: "mint_operations_wallet_id_idx")
   @@map("mint_operations")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.7 / docs/01_DOMAIN_MODEL.md §2.6 — yalnızca
+/// managed cüzdanlardan başlatılan, zincire imzalı işlem gönderen sistem içi
+/// transfer ve durum makinesi. `wallet_id` yalnızca `type = 'managed'` bir cüzdanı
+/// referans alabilir (application-layer kontrol — `TransfersService`). `amount` en
+/// küçük birimde (wei/sun) BigInt string'idir — asla JS `number`
+/// (`.claude/rules/15-backend-data.md`, mimari-kararlar P-015).
+///
+/// `state` alanına yazan **tek** kod yolu `TransferStateMachine` servisidir
+/// (mimari-kararlar W-003/W-004, `.claude/rules/13-critical-modules.md`); hiçbir
+/// controller/repository/worker bu alana doğrudan `UPDATE` uygulamaz.
+///
+/// `idempotency_key` — `POST /transfers`'ün zorunlu `Idempotency-Key` header'ı
+/// (istemcinin ürettiği UUID). `(wallet_id, idempotency_key)` UNIQUE: aynı anahtarla
+/// gelen çift gönderim / retry ikinci bir transfer oluşturamaz (`docs/03` §7,
+/// mimari-kararlar I-005 istemci-tarafı idempotency). `NULL` anahtarlar birbiriyle
+/// çakışmaz (Postgres NULLS DISTINCT) — bu fazda her satır dolu bir anahtar taşır.
+model Transfer {
+  id             String        @id @default(uuid()) @db.Uuid
+  walletId       String        @map("wallet_id") @db.Uuid
+  networkId      String        @map("network_id") @db.Uuid
+  assetId        String        @map("asset_id") @db.Uuid
+  toAddress      String        @map("to_address")
+  amount         String
+  state          TransferState @default(draft)
+  txHash         String?       @map("tx_hash")
+  failureReason  String?       @map("failure_reason")
+  idempotencyKey String?       @map("idempotency_key")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+
+  wallet  Wallet  @relation(fields: [walletId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  network Network @relation(fields: [networkId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  asset   Asset   @relation(fields: [assetId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  stateEvents TransferStateEvent[]
+
+  @@unique([walletId, idempotencyKey], map: "transfers_wallet_id_idempotency_key_key")
+  @@index([walletId], map: "transfers_wallet_id_idx")
+  @@index([state], map: "transfers_state_idx")
+  @@index([txHash], map: "transfers_tx_hash_idx")
+  @@map("transfers")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.8 / docs/01_DOMAIN_MODEL.md §2.7 — bir transferin
+/// her durum geçişinin append-only denetim izi; hiçbir satır güncellenmez veya
+/// silinmez (yalnızca `occurred_at`). İlk kayıt `from_state = NULL` (giriş durumu)
+/// taşır. `actor` serbest metindir ama uygulama katmanında sabit bir liste ile
+/// sınırlanır (`'user'` | `'system'` | `'worker:signing'` | `'worker:broadcast'` |
+/// `'worker:confirmation'`). `TransferStateMachine` her geçişte bir satır ekler —
+/// bu tablo state machine servisi dışından yazılmaz.
+model TransferStateEvent {
+  id         String         @id @default(uuid()) @db.Uuid
+  transferId String         @map("transfer_id") @db.Uuid
+  fromState  TransferState?  @map("from_state")
+  toState    TransferState   @map("to_state")
+  occurredAt DateTime       @default(now()) @map("occurred_at") @db.Timestamptz
+  actor      String
+  metadata   Json?
+
+  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([transferId], map: "transfer_state_events_transfer_id_idx")
+  @@map("transfer_state_events")
 }
 
 /// docs/02_DATABASE_SCHEMA.md §2.12 — uygulama seviyesi denetim izi.

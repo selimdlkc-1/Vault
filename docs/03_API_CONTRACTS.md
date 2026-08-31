@@ -326,7 +326,9 @@ Eşik aşıldığında `429 RATE_LIMIT_EXCEEDED` döner, yanıt `Retry-After` he
 
 ## 7. Idempotency ve Retry Semantiği
 
-**Client-tarafı idempotency:** `POST /api/v1/transfers` çağrısı zorunlu bir `Idempotency-Key` header'ı (istemcinin ürettiği UUID) taşır. Backend, aynı `(userId, idempotencyKey)` çiftiyle daha önce başarılı bir istek işlendiyse, yeni bir kayıt oluşturmak yerine mevcut `Transfer` kaydını `200` ile döner (yeni oluşturmada olduğu gibi `201` değil). Bu, form çift gönderimi veya ağ kesintisi sonrası istemci retry'ının aynı transferi iki kez oluşturmasını engeller. Anahtar 24 saat saklanır, sonrasında yeniden kullanılabilir.
+**Client-tarafı idempotency:** `POST /api/v1/transfers` çağrısı zorunlu bir `Idempotency-Key` header'ı (istemcinin ürettiği UUID) taşır; eksikse `400 VALIDATION_FAILED`. Backend, aynı `(userId, idempotencyKey)` çiftiyle daha önce başarılı bir istek işlendiyse, yeni bir kayıt oluşturmak yerine mevcut `Transfer` kaydını `200` ile döner (yeni oluşturmada olduğu gibi `201` değil). Bu, form çift gönderimi veya ağ kesintisi sonrası istemci retry'ının aynı transferi iki kez oluşturmasını engeller. Anahtar 24 saat saklanır, sonrasında yeniden kullanılabilir.
+
+Anahtar ayrı bir tabloda değil, `transfers.idempotency_key` kolonunda tutulur (`02_DATABASE_SCHEMA.md §2.7`) — kullanıcı-anahtar çifti zaten tek transfer'e 1-1 karşılık geldiğinden ayrı normalizasyon gereksizdir (`mimari-kararlar.md` W-004). Sahiplik `wallet.user_id` join'iyle zorlanır (`transfers`'ta ayrı `user_id` yoktur). 24 saatlik pencere sorgu anında `created_at`'e göre değerlendirilir; DB seviyesinde `(wallet_id, idempotency_key)` UNIQUE, eşzamanlı çift gönderim yarışına karşı backstop'tur (ihlal `200` + mevcut kayda çevrilir, hata döndürülmez).
 
 **Sunucu-tarafı (worker) idempotency:** İmzalama, broadcast ve confirmation worker'ları `(transferId, targetState)` veya `(chain, txHash)` bileşik anahtarıyla idempotent çalışır; BullMQ job id bu anahtardan türetilir. Terminal durum kuralı (bir transfer `confirmed`/`failed`/`dropped` olduktan sonra hiçbir geçiş kabul edilmez) sayesinde bir job'un yanlışlıkla iki kez işlenmesi yan etkisizdir.
 

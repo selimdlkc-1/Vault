@@ -148,7 +148,7 @@ Fazlar arasında paralelleştirme yapılmaz — her faz tek bir agent oturumu zi
 
 ### Faz 5 — Transfer State Machine Uçtan Uca
 
-**§5.1 — Transfer şeması ve draft oluşturma.** `transfers`, `transfer_state_events` tabloları; `TransferStateMachine` servisi (yalnızca `draft` girişi); `POST /transfers` + `Idempotency-Key` desteği.
+**§5.1 — Transfer şeması ve draft oluşturma.** `transfers`, `transfer_state_events` tabloları; `TransferStateMachine` servisi (yalnızca `draft` girişi); `POST /transfers` + `Idempotency-Key` desteği. 🔜 Kod tamam — `feat/transfer-schema-draft-creation`: `20260831100557_add_transfers` migration (`transfer_state` enum, `transfers` + append-only `transfer_state_events`, `transfers.idempotency_key` + `(wallet_id, idempotency_key)` UNIQUE — `mimari-kararlar.md` W-004 / Versiyon Geçmişi 0.6), `transfers/` modülü (`TransferStateMachine.enter()` yalnızca `null → draft`; `TransfersService.createDraft` sahiplik + managed tip + istemci idempotency; `POST /transfers` `201`/`200`, 10 istek/dk userId rate limit), `WalletsService.findOwnedManagedWallet` okuma metodu, `packages/types` `createTransferSchema`. Cross-network guard / step-up auth / bakiye kontrolü İterasyon 2'de.
 
 **§5.2 — Cross-network guard ve step-up auth.** `POST /transfers/:id/confirm` — şifre tekrar doğrulama, cross-network guard, bakiye yeterliliği kontrolü, `draft → pending_signature` geçişi.
 

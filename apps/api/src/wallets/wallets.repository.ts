@@ -124,6 +124,21 @@ export class WalletsRepository {
   }
 
   /**
+   * Sahiplik + tip kontrolü için yalın cüzdan okuması (Faz 5 §5.1 — `TransfersModule`
+   * `WalletsService.findOwnedManagedWallet` üzerinden tüketir). `balance_caches`
+   * join'i yoktur; yalnızca yetkilendirme sonrası kontrol için gereken alanlar.
+   * Bulunamazsa `null`.
+   */
+  findByIdLean(
+    walletId: string,
+  ): Promise<Pick<Wallet, "id" | "userId" | "type" | "networkId"> | null> {
+    return this.prisma.wallet.findUnique({
+      where: { id: walletId },
+      select: { id: true, userId: true, type: true, networkId: true },
+    });
+  }
+
+  /**
    * `(network, address)` benzersizlik ön kontrolü — deterministik `409`
    * (`WALLET_ADDRESS_ALREADY_EXISTS`) için. Yarış durumunda DB `P2002` yine
    * `AllExceptionsFilter`'da aynı koda eşlenir.
