@@ -195,7 +195,7 @@ Format: `S-<DOMAIN>-<ACTION>`. `DOMAIN` büyük harfli kısa bir isim (`AUTH`, `
   | Ağ filtresi | select | ❌ | Yalnızca tanımlı ağlardan biri |
   | Tip filtresi | select (watch-only / managed / tümü) | ❌ | — |
 - *Aksiyonlar ve sonuçları:*
-  - "Cüzdan Ekle" → tip seçim modalı açılır → S-WALLET-ADD-WATCHONLY veya S-WALLET-ADD-MANAGED'e gider.
+  - "Cüzdan Ekle" → `/wallets/add` (type'sız) tip seçim ekranı → S-WALLET-ADD-WATCHONLY veya S-WALLET-ADD-MANAGED'e gider.
   - Satıra tıklama → S-WALLET-DETAIL.
 - *UX state'leri:*
   - *Boş:* "Henüz bir cüzdanınız yok." + CTA.

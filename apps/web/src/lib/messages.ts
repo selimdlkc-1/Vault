@@ -102,8 +102,19 @@ export const messages = {
     submit: "Cüzdanı Ekle",
     submitting: "Ekleniyor...",
     cancel: "Vazgeç",
-    unsupportedType:
-      "Yönetilen cüzdan oluşturma Faz 4'te eklenecek. Şimdilik yalnızca izleme cüzdanı eklenebilir.",
+    // Tip seçim ekranı (docs/06 §4.2 tam ekran akış diyagramı "Tip seçimi" düğümü).
+    choiceTitle: "Cüzdan Ekle",
+    choiceWatchOnlyTitle: "İzleme Cüzdanı",
+    choiceWatchOnlyDesc:
+      "Harici bir adresi yalnızca bakiye ve hareket takibi için ekleyin.",
+    choiceManagedTitle: "Yönetilen Cüzdan",
+    choiceManagedDesc:
+      "Sistemin sizin için yeni bir cüzdan türetmesine ve transfer yapabilmenize izin verin.",
+    // TR metinler docs/06_SCREEN_CATALOG.md §4.2 S-WALLET-ADD-MANAGED'den birebir.
+    managedTitle: "Yönetilen Cüzdan Oluştur",
+    managedSubmit: "Cüzdan Oluştur",
+    managedSubmitting: "Oluşturuluyor...",
+    managedCreatedToast: "Yönetilen cüzdanınız oluşturuldu.",
   },
   movements: {
     // TR metinler docs/06_SCREEN_CATALOG.md §4.3 S-MOVEMENTS'ten birebir.
