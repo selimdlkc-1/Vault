@@ -108,3 +108,80 @@ describe("TransferStateMachine — geçiş guard'ı (İterasyon 2-5 genişletir)
     expect(err).toBeInstanceOf(Error);
   });
 });
+
+describe("TransferStateMachine.transitionTo (İterasyon 2 — §5.2)", () => {
+  const TX = Symbol("tx");
+  let repository: jest.Mocked<
+    Pick<
+      TransfersRepository,
+      "findByIdInTx" | "updateState" | "insertStateEvent"
+    >
+  >;
+  let machine: TransferStateMachine;
+
+  beforeEach(() => {
+    repository = {
+      findByIdInTx: jest.fn().mockResolvedValue(transferRow({ state: "draft" })),
+      updateState: jest
+        .fn()
+        .mockResolvedValue(transferRow({ state: "pending_signature" })),
+      insertStateEvent: jest.fn().mockResolvedValue(undefined),
+    };
+    machine = new TransferStateMachine(
+      repository as unknown as TransfersRepository,
+    );
+  });
+
+  it("draft → pending_signature: state günceller + state_events'e fromState:'draft' yazar (aynı tx)", async () => {
+    const result = await machine.transitionTo(
+      TX as never,
+      "abc",
+      "pending_signature",
+      "user",
+    );
+
+    expect(repository.findByIdInTx).toHaveBeenCalledWith(TX, "abc");
+    expect(repository.updateState).toHaveBeenCalledWith(
+      TX,
+      "abc",
+      "pending_signature",
+    );
+    expect(repository.insertStateEvent).toHaveBeenCalledWith(TX, {
+      transferId: "abc",
+      fromState: "draft",
+      toState: "pending_signature",
+      actor: "user",
+    });
+    expect(result.state).toBe("pending_signature");
+  });
+
+  it("draft dışı durumdan pending_signature denemesi → TRANSFER_INVALID_TRANSITION", async () => {
+    repository.findByIdInTx.mockResolvedValue(
+      transferRow({ state: "pending_signature" }),
+    );
+
+    await expect(
+      machine.transitionTo(TX as never, "abc", "pending_signature", "user"),
+    ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
+    expect(repository.updateState).not.toHaveBeenCalled();
+    expect(repository.insertStateEvent).not.toHaveBeenCalled();
+  });
+
+  it("terminal durumdan (confirmed) hiçbir geçiş kabul edilmez → TRANSFER_INVALID_TRANSITION", async () => {
+    repository.findByIdInTx.mockResolvedValue(
+      transferRow({ state: "confirmed" }),
+    );
+
+    await expect(
+      machine.transitionTo(TX as never, "abc", "pending_signature", "user"),
+    ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
+  });
+
+  it("transfer eşzamanlı silinmişse (findByIdInTx null) → TRANSFER_INVALID_TRANSITION", async () => {
+    repository.findByIdInTx.mockResolvedValue(null);
+
+    await expect(
+      machine.transitionTo(TX as never, "abc", "pending_signature", "user"),
+    ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
+  });
+});

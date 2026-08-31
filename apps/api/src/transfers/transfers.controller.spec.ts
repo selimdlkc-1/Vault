@@ -5,7 +5,9 @@ import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
 import type { Prisma, Transfer } from "@prisma/client";
 import request from "supertest";
+import { AuditService } from "../audit/audit.service";
 import { AuthModule } from "../auth/auth.module";
+import { AuthService } from "../auth/auth.service";
 import { RefreshTokensRepository } from "../auth/refresh-tokens.repository";
 import { UsersRepository } from "../auth/users.repository";
 import { WalletNotManagedException } from "../common/exceptions/domain.exception";
@@ -14,6 +16,7 @@ import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { RolesGuard } from "../common/guards/roles.guard";
 import { ResponseEnvelopeInterceptor } from "../common/interceptors/response-envelope.interceptor";
 import { testConfigModule } from "../config/testing-config.module";
+import { NetworksService } from "../networks/networks.service";
 import { TestingPrismaModule } from "../prisma/testing-prisma.module";
 import { WalletsService } from "../wallets/wallets.service";
 import { TransfersController } from "./transfers.controller";
@@ -99,6 +102,46 @@ class InMemoryTransfersRepository {
     this.stateEvents.push(data);
     return Promise.resolve();
   }
+
+  // --- İterasyon 2: confirm() yolu ---
+  readonly owners = new Map<string, string>();
+
+  seed(row: Transfer, ownerId: string): void {
+    this.rows.push(row);
+    this.owners.set(row.id, ownerId);
+  }
+
+  findByIdWithOwner(
+    transferId: string,
+  ): Promise<(Transfer & { wallet: { userId: string } }) | null> {
+    const row = this.rows.find((r) => r.id === transferId);
+    if (!row) return Promise.resolve(null);
+    return Promise.resolve({
+      ...row,
+      wallet: { userId: this.owners.get(row.id) ?? "" },
+    });
+  }
+
+  findByIdInTx(
+    tx: Prisma.TransactionClient,
+    transferId: string,
+  ): Promise<Transfer | null> {
+    const row = this.rows.find((r) => r.id === transferId);
+    // Prisma taze bir obje döndürür — kopyala ki sonraki `updateState` mutasyonu
+    // çağıranın elindeki `current`'ı bozmasın.
+    return Promise.resolve(row ? { ...row } : null);
+  }
+
+  updateState(
+    tx: Prisma.TransactionClient,
+    transferId: string,
+    state: Transfer["state"],
+  ): Promise<Transfer> {
+    const row = this.rows.find((r) => r.id === transferId);
+    if (!row) throw new Error("not found");
+    row.state = state;
+    return Promise.resolve({ ...row });
+  }
 }
 
 describe("TransfersController (integration) — POST /api/v1/transfers", () => {
@@ -126,6 +169,14 @@ describe("TransfersController (integration) — POST /api/v1/transfers", () => {
         TransfersThrottlerGuard,
         { provide: TransfersRepository, useClass: InMemoryTransfersRepository },
         { provide: WalletsService, useValue: { findOwnedManagedWallet } },
+        {
+          provide: NetworksService,
+          useValue: {
+            findNetworkById: jest.fn(),
+            isNetworkAssetActive: jest.fn(),
+          },
+        },
+        { provide: AuditService, useValue: { record: jest.fn() } },
         { provide: APP_GUARD, useClass: JwtAuthGuard },
         { provide: APP_GUARD, useClass: RolesGuard },
       ],
@@ -261,5 +312,187 @@ describe("TransfersController (integration) — POST /api/v1/transfers", () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_FAILED");
+  });
+});
+
+/**
+ * `POST /api/v1/transfers/:id/confirm` HTTP akışı (`docs/03_API_CONTRACTS.md`
+ * §5.4) — step-up + guard'lar + `draft → pending_signature`. `AuthService`,
+ * `NetworksService`, `WalletsService`, `AuditService` stub'lı; `TransferStateMachine`
+ * gerçek, `TransfersRepository` bellek-içi fake.
+ */
+describe("TransfersController (integration) — POST /api/v1/transfers/:id/confirm", () => {
+  let app: INestApplication;
+  let jwt: JwtService;
+  let repo: InMemoryTransfersRepository;
+
+  const verifyPassword = jest.fn();
+  const findNetworkById = jest.fn();
+  const isNetworkAssetActive = jest.fn();
+  const getCachedBalanceRaw = jest.fn();
+  const auditRecord = jest.fn();
+
+  const DRAFT_ID = "f1111111-1111-4111-8111-111111111111";
+  const EVM_TO = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
+
+  function draftRow(overrides: Partial<Transfer> = {}): Transfer {
+    const now = new Date();
+    return {
+      id: DRAFT_ID,
+      walletId: MANAGED_WALLET_ID,
+      networkId: NETWORK_ID,
+      assetId: ASSET_ID,
+      toAddress: EVM_TO,
+      amount: "1000",
+      state: "draft",
+      txHash: null,
+      failureReason: null,
+      idempotencyKey: randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    };
+  }
+
+  beforeEach(async () => {
+    verifyPassword.mockResolvedValue(true);
+    findNetworkById.mockResolvedValue({
+      id: NETWORK_ID,
+      name: "Sepolia",
+      chainType: "evm",
+      chainId: "11155111",
+      confirmationThreshold: 3,
+    });
+    isNetworkAssetActive.mockResolvedValue(true);
+    getCachedBalanceRaw.mockResolvedValue(10_000n);
+    auditRecord.mockResolvedValue(undefined);
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [testConfigModule(), TestingPrismaModule, AuthModule],
+      controllers: [TransfersController],
+      providers: [
+        TransfersService,
+        TransferStateMachine,
+        TransfersThrottlerGuard,
+        { provide: TransfersRepository, useClass: InMemoryTransfersRepository },
+        { provide: WalletsService, useValue: { getCachedBalanceRaw } },
+        {
+          provide: NetworksService,
+          useValue: { findNetworkById, isNetworkAssetActive },
+        },
+        { provide: AuditService, useValue: { record: auditRecord } },
+        { provide: APP_GUARD, useClass: JwtAuthGuard },
+        { provide: APP_GUARD, useClass: RolesGuard },
+      ],
+    })
+      .overrideProvider(AuthService)
+      .useValue({ verifyPassword })
+      .overrideProvider(UsersRepository)
+      .useValue({})
+      .overrideProvider(RefreshTokensRepository)
+      .useValue({})
+      .compile();
+
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix("api/v1");
+    app.useGlobalInterceptors(new ResponseEnvelopeInterceptor());
+    app.useGlobalFilters(new AllExceptionsFilter());
+    await app.init();
+
+    jwt = app.get(JwtService);
+    repo = app.get(TransfersRepository);
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  function token(sub = USER_ID): string {
+    return jwt.sign({ sub, role: "user" });
+  }
+
+  it("happy path → 200, state pending_signature, state_event + audit yazıldı", async () => {
+    repo.seed(draftRow(), USER_ID);
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/transfers/${DRAFT_ID}/confirm`)
+      .set("Authorization", `Bearer ${token()}`)
+      .send({ currentPassword: "correct-horse" });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ state: "pending_signature" });
+    expect(repo.rows[0].state).toBe("pending_signature");
+    expect(repo.stateEvents).toEqual([
+      {
+        transferId: DRAFT_ID,
+        fromState: "draft",
+        toState: "pending_signature",
+        actor: "user",
+      },
+    ]);
+    expect(auditRecord).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "TRANSFER_STATE_CHANGED",
+        entityId: DRAFT_ID,
+        metadata: { fromState: "draft", toState: "pending_signature" },
+      }),
+    );
+  });
+
+  it("yanlış şifre → 401 AUTH_STEP_UP_REQUIRED, geçiş yok", async () => {
+    repo.seed(draftRow(), USER_ID);
+    verifyPassword.mockResolvedValue(false);
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/transfers/${DRAFT_ID}/confirm`)
+      .set("Authorization", `Bearer ${token()}`)
+      .send({ currentPassword: "wrong" });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe("AUTH_STEP_UP_REQUIRED");
+    expect(repo.rows[0].state).toBe("draft");
+  });
+
+  it("başkasının transferi → 403 FORBIDDEN_NOT_OWNER", async () => {
+    repo.seed(draftRow(), "99999999-9999-4999-8999-999999999999");
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/transfers/${DRAFT_ID}/confirm`)
+      .set("Authorization", `Bearer ${token()}`)
+      .send({ currentPassword: "correct-horse" });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN_NOT_OWNER");
+  });
+
+  it("biçimsiz :id → 404 RESOURCE_NOT_FOUND", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/transfers/not-a-uuid/confirm")
+      .set("Authorization", `Bearer ${token()}`)
+      .send({ currentPassword: "correct-horse" });
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("RESOURCE_NOT_FOUND");
+  });
+
+  it("currentPassword eksik → 400 VALIDATION_FAILED", async () => {
+    repo.seed(draftRow(), USER_ID);
+
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/transfers/${DRAFT_ID}/confirm`)
+      .set("Authorization", `Bearer ${token()}`)
+      .send({});
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("token yoksa → 401", async () => {
+    const res = await request(app.getHttpServer())
+      .post(`/api/v1/transfers/${DRAFT_ID}/confirm`)
+      .send({ currentPassword: "correct-horse" });
+
+    expect(res.status).toBe(401);
   });
 });

@@ -2,17 +2,32 @@ import {
   Body,
   Controller,
   Headers,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
   Post,
   Res,
   UseGuards,
 } from "@nestjs/common";
 import { Throttle } from "@nestjs/throttler";
-import { createTransferSchema, type CreateTransferInput } from "@vault/types";
+import {
+  confirmTransferSchema,
+  createTransferSchema,
+  type ConfirmTransferInput,
+  type CreateTransferInput,
+} from "@vault/types";
 import type { Response } from "express";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
-import { ValidationFailedException } from "../common/exceptions/domain.exception";
+import {
+  ResourceNotFoundException,
+  ValidationFailedException,
+} from "../common/exceptions/domain.exception";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
-import { TransfersService, type TransferView } from "./transfers.service";
+import {
+  TransfersService,
+  type ConfirmTransferResult,
+  type TransferView,
+} from "./transfers.service";
 import { TransfersThrottlerGuard } from "./transfers-throttler.guard";
 
 /** `POST /transfers` rate limit'i (`docs/03_API_CONTRACTS.md` §6 — 10 istek/dk). */
@@ -26,9 +41,9 @@ const TRANSFER_RATE_LIMIT = { limit: 10, ttl: 60_000 } as const;
  * cüzdanından transfer başlatır; sahiplik + managed tip kontrolü servis
  * katmanındadır (`TransfersService.createDraft` → `WalletsService`).
  *
- * Bu iterasyonda yalnızca `POST /transfers` var; `POST /transfers/:id/confirm`
- * (İterasyon 2), `GET /transfers` + `GET /transfers/:id` + `DELETE` (sonraki
- * iterasyonlar) henüz yok.
+ * İterasyon 2: `POST /transfers/:id/confirm` (step-up + guard'lar +
+ * `draft → pending_signature`). `GET /transfers` + `GET /transfers/:id` +
+ * `DELETE` (sonraki iterasyonlar) henüz yok.
  */
 @Controller("transfers")
 export class TransfersController {
@@ -62,5 +77,36 @@ export class TransfersController {
     );
     res.status(isNew ? 201 : 200);
     return transfer;
+  }
+
+  /**
+   * `POST /transfers/:id/confirm` — step-up authentication (`currentPassword`) +
+   * cross-network guard + `(network, asset)` aktiflik + bakiye yeterliliği
+   * kontrolünden geçen transfer'i `draft → pending_signature`'a taşır
+   * (`docs/03_API_CONTRACTS.md` §5.4). Başarıda `200 { state: 'pending_signature' }`.
+   * Kontrol sırası ve hata kodları servis katmanındadır (`TransfersService.confirm`).
+   *
+   * Biçimsiz `:id` → `404 RESOURCE_NOT_FOUND` (`docs/03` §3 — "yok" ile "geçersiz
+   * id" istemci için ayrılmaz). Aynı rate limit'e tabidir (`docs/03` §6 —
+   * 10 istek/dk, `userId` anahtarlı).
+   */
+  @Post(":id/confirm")
+  @HttpCode(200)
+  @UseGuards(TransfersThrottlerGuard)
+  @Throttle({ default: TRANSFER_RATE_LIMIT })
+  confirm(
+    @CurrentUser("id") userId: string,
+    @Param(
+      "id",
+      new ParseUUIDPipe({
+        exceptionFactory: () =>
+          new ResourceNotFoundException("Transfer bulunamadı."),
+      }),
+    )
+    transferId: string,
+    @Body(new ZodValidationPipe(confirmTransferSchema))
+    body: ConfirmTransferInput,
+  ): Promise<ConfirmTransferResult> {
+    return this.transfersService.confirm(userId, transferId, body.currentPassword);
   }
 }

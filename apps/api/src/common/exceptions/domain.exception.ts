@@ -77,6 +77,26 @@ export class AuthRefreshReuseDetectedException extends DomainException {
 }
 
 /**
+ * `401 AUTH_STEP_UP_REQUIRED` — transfer onayında (`POST /transfers/:id/confirm`)
+ * sunulan `currentPassword` yanlış veya eksik; `draft → pending_signature` geçişi
+ * step-up authentication (şifre tekrarı) olmadan gerçekleşemez
+ * (`docs/03_API_CONTRACTS.md` §3/§5.4, `docs/07_SECURITY_IMPLEMENTATION.md` §4
+ * diyagramı, `docs/mimari-kararlar.md` SEC-008,
+ * `.claude/rules/03-security-baseline.md` madde 3). Bu kontrol diğer tüm
+ * guard'lardan (cross-network, bakiye) **önce** çalışır — yanlış şifreyle gelen
+ * bir istek başka hiçbir kontrolü tetiklemeden reddedilir (bilgi sızıntısı
+ * önlemi).
+ */
+export class AuthStepUpRequiredException extends DomainException {
+  readonly code = "AUTH_STEP_UP_REQUIRED";
+  readonly httpStatus = 401;
+
+  constructor() {
+    super("Şifreniz doğrulanamadı. Transferi onaylamak için şifrenizi tekrar girin.");
+  }
+}
+
+/**
  * `401 AUTH_TOKEN_INVALID` — `Authorization: Bearer` header'ı yok, biçimsiz veya
  * içindeki JWT imzası/yapısı geçersiz (`docs/03_API_CONTRACTS.md` §3/§4). Doğal
  * süre dolumu bundan ayrıdır (`AUTH_TOKEN_EXPIRED`) — istemci ilkinde refresh
@@ -175,6 +195,62 @@ export class WalletAddressAlreadyExistsException extends DomainException {
 
   constructor() {
     super("Bu adres bu ağda zaten bir cüzdan olarak kayıtlı.");
+  }
+}
+
+/**
+ * `409 WALLET_CROSS_NETWORK_MISMATCH` — gönderen cüzdanın ağı ile hedef adresin
+ * beklenen ağı uyuşmuyor; transfer `draft` durumundan ileri geçemez
+ * (`docs/01_DOMAIN_MODEL.md` §4 madde 3, `docs/03_API_CONTRACTS.md` §3/§5.4,
+ * `docs/mimari-kararlar.md` AUTH-004, `.claude/rules/13-critical-modules.md`).
+ * Cross-network guard yalnızca backend'de zorlanır; frontend kontrolü tek başına
+ * yeterli sayılmaz. `POST /transfers` girişinde ve `POST /transfers/:id/confirm`'de
+ * (network_asset arada pasifleşmiş/adres formatı bozulmuş olabilir) tekrar
+ * kontrol edilir. `docs/08_TESTING_STRATEGY.md` §4 senaryo #1.
+ */
+export class WalletCrossNetworkMismatchException extends DomainException {
+  readonly code = "WALLET_CROSS_NETWORK_MISMATCH";
+  readonly httpStatus = 409;
+
+  constructor() {
+    super("Hedef adres, gönderen cüzdanın ağıyla uyuşmuyor.");
+  }
+}
+
+/**
+ * `409 WALLET_INSUFFICIENT_BALANCE` — cüzdanın DB önbelleğindeki bakiyesi transfer
+ * tutarını karşılamıyor (`docs/03_API_CONTRACTS.md` §3/§5.4,
+ * `docs/01_DOMAIN_MODEL.md` §5.2 `draft → pending_signature`,
+ * `docs/08_TESTING_STRATEGY.md` §4 senaryo). `POST /transfers/:id/confirm`
+ * senkron adımında yalnızca `balance_caches`'ten okunur (canlı RPC yok,
+ * `docs/mimari-kararlar.md` I-003); worker yeniden kontrolü İterasyon 3'tedir.
+ */
+export class WalletInsufficientBalanceException extends DomainException {
+  readonly code = "WALLET_INSUFFICIENT_BALANCE";
+  readonly httpStatus = 409;
+
+  constructor() {
+    super("Cüzdan bakiyesi bu transfer için yeterli değil.");
+  }
+}
+
+/**
+ * `409 TRANSFER_INVALID_TRANSITION` — istenen durum geçişi, transferin mevcut
+ * durumundan izin verilen bir geçiş değil (`docs/03_API_CONTRACTS.md` §3/§5.4,
+ * `docs/01_DOMAIN_MODEL.md` §5.2, `docs/mimari-kararlar.md` W-003,
+ * `.claude/rules/13-critical-modules.md`). Terminal durumdaki
+ * (`confirmed`/`failed`/`dropped`) bir transfer üzerinde işlem denemesi de
+ * (whitelist'te o durumlardan hiçbir hedef olmadığından) bu koda düşer —
+ * `TRANSFER_ALREADY_TERMINAL` semantiği bu kod yoluyla kapsanır. `TransferStateMachine`
+ * whitelist guard'ı `InvalidTransitionError` fırlatır; servis/state machine bunu
+ * bu domain exception'a çevirir.
+ */
+export class TransferInvalidTransitionException extends DomainException {
+  readonly code = "TRANSFER_INVALID_TRANSITION";
+  readonly httpStatus = 409;
+
+  constructor() {
+    super("Bu transfer bu adımda onaylanamaz.");
   }
 }
 

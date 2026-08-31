@@ -48,3 +48,24 @@ export const createTransferSchema = z
   .strict();
 
 export type CreateTransferInput = z.infer<typeof createTransferSchema>;
+
+/**
+ * `POST /transfers/:id/confirm` istek gövdesi — step-up authentication
+ * (`docs/03_API_CONTRACTS.md` §4 "Step-up header'ı", §5.4, `docs/mimari-kararlar.md`
+ * SEC-008). Kullanıcı `draft → pending_signature` geçişi için mevcut şifresini
+ * tekrar girer; backend bu şifreyi doğrulamadan geçişe izin vermez. Aynı şema hem
+ * backend `ZodValidationPipe`'ında hem transfer onay formunun doğrulamasında
+ * (Faz 5 §5.6b) kullanılır.
+ *
+ * `.strict()` — mass-assignment koruması (`docs/07_SECURITY_IMPLEMENTATION.md` §6);
+ * yalnızca `currentPassword` kabul edilir. Şifre içeriğine minimum uzunluk dışında
+ * kural uygulanmaz (register'daki politika burada tekrarlanmaz — yalnızca "boş
+ * değil" yapısal kontrolü).
+ */
+export const confirmTransferSchema = z
+  .object({
+    currentPassword: z.string().min(1),
+  })
+  .strict();
+
+export type ConfirmTransferInput = z.infer<typeof confirmTransferSchema>;

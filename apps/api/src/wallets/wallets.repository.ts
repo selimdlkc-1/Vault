@@ -240,6 +240,24 @@ export class WalletsRepository {
   }
 
   /**
+   * Tek bir `(wallet, asset)` çiftinin önbelleğe alınmış bakiyesi (en küçük
+   * birimde `balance_raw` string'i) — Faz 5 §5.2 `TransfersService.confirm`
+   * bakiye yeterliliği kontrolü için. Kayıt yoksa `null` (henüz hiç
+   * senkronlanmamış); çağıran bunu `0` olarak yorumlar. Canlı RPC yok
+   * (`docs/mimari-kararlar.md` I-003). İş kuralı yok.
+   */
+  async findCachedBalanceRaw(
+    walletId: string,
+    assetId: string,
+  ): Promise<string | null> {
+    const row = await this.prisma.balanceCache.findUnique({
+      where: { walletId_assetId: { walletId, assetId } },
+      select: { balanceRaw: true },
+    });
+    return row?.balanceRaw ?? null;
+  }
+
+  /**
    * `balance_caches`'e bir `(wallet, asset)` bakiyesini yazar/günceller (Faz 3
    * §3.2). Tek tablo yazımı — audit gerektirmez, `$transaction` açılmaz
    * (`docs/04_BACKEND_SPEC.md` §7 salt-yazma istisnası).

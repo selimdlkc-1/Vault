@@ -90,6 +90,21 @@ export class NetworksService {
   }
 
   /**
+   * Belirli bir `(network, asset)` çifti `is_active = true` mi
+   * (`docs/01_DOMAIN_MODEL.md` §4 madde 1, `docs/mimari-kararlar.md` AUTH-003).
+   * `TransfersService.confirm` (Faz 5 §5.2) `draft → pending_signature` geçişinden
+   * önce bunu tekrar kontrol eder — transfer oluşturulduktan sonra Admin çifti
+   * pasifleştirmiş olabilir. Çift tanımlı değilse `false`.
+   */
+  async isNetworkAssetActive(
+    networkId: string,
+    assetId: string,
+  ): Promise<boolean> {
+    const pair = await this.repository.findNetworkAsset(networkId, assetId);
+    return pair?.isActive ?? false;
+  }
+
+  /**
    * Bir ağın varlıklarını aktivasyon durumuyla listeler. Ağ yoksa
    * `RESOURCE_NOT_FOUND` (`docs/03_API_CONTRACTS.md` §5.3). `activeOnly`
    * varsayılan `true` — controller `ParseBoolPipe` + `DefaultValuePipe` ile geçirir.

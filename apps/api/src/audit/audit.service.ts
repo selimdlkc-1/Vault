@@ -14,7 +14,8 @@ export type AuditAction =
   | "NETWORK_ASSET_ACTIVATED"
   | "NETWORK_ASSET_DEACTIVATED"
   | "WALLET_CREATED"
-  | "MINT_EXECUTED";
+  | "MINT_EXECUTED"
+  | "TRANSFER_STATE_CHANGED";
 
 export type AuditRecordInput = Omit<AuditLogEntry, "action"> & {
   action: AuditAction;

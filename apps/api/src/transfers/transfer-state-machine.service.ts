@@ -1,5 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import type { Prisma, Transfer, TransferState } from "@prisma/client";
+import { TransferInvalidTransitionException } from "../common/exceptions/domain.exception";
 import { TransfersRepository } from "./transfers.repository";
 
 /**
@@ -13,7 +14,13 @@ import { TransfersRepository } from "./transfers.repository";
  * dönüşürdü; `Map` gerçek `null` anahtarını korur.
  */
 const ALLOWED_TRANSITIONS: ReadonlyMap<TransferState | null, readonly TransferState[]> =
-  new Map([[null, ["draft"] as const]]);
+  new Map<TransferState | null, readonly TransferState[]>([
+    [null, ["draft"]],
+    // İterasyon 2 (§5.2): `draft → pending_signature` step-up + guard'lar geçince.
+    // `draft → failed` hedefi İterasyon 3'ün başarısız imzalama senaryosu için
+    // burada tanımlanır ama bu iterasyonda tetiklenmez.
+    ["draft", ["pending_signature", "failed"]],
+  ]);
 
 /**
  * Terminal durumlar — bu durumlardan **hiçbir** geçiş yapılamaz
@@ -61,10 +68,11 @@ export interface EnterTransferData {
  * alanına yazan **tek** kod yolu budur; hiçbir controller/repository/worker bu
  * alana doğrudan `UPDATE` uygulamaz (`docs/04_BACKEND_SPEC.md` §1 kesin kural).
  *
- * Bu iterasyonda yalnızca `enter()` (giriş durumu `draft`) vardır. İterasyon 2-5
- * her yeni geçiş için buraya bir metod ekler; her metod önce
- * `assertTransitionAllowed` guard'ından geçer, whitelist ve terminal-durum
- * kuralları tek noktada uygulanır.
+ * `enter()` giriş durumunu (`null → draft`) yazar; `transitionTo()` sonraki tüm
+ * geçişlerin ortak yoludur (İterasyon 2: `draft → pending_signature`). Her ikisi
+ * de `assertTransitionAllowed` guard'ından geçer — whitelist ve terminal-durum
+ * kuralları tek noktada uygulanır. İterasyon 3-5 whitelist'i genişletir, bu
+ * metotları bypass etmez.
  */
 @Injectable()
 export class TransferStateMachine {
@@ -102,6 +110,52 @@ export class TransferStateMachine {
     });
 
     return transfer;
+  }
+
+  /**
+   * Genel durum geçişi (İterasyon 2-5 ortak yolu). Çağıranın `$transaction`'ı
+   * içinde: (1) transfer'in güncel `state`'ini taze okur, (2) `fromState → toState`
+   * whitelist + terminal-durum guard'ından geçirir — izin verilmeyen geçiş
+   * `TransferInvalidTransitionException` (`docs/03_API_CONTRACTS.md` §3
+   * `TRANSFER_INVALID_TRANSITION`; terminal durumlar da bu koda düşer), (3)
+   * `transfers.state`'i günceller + `transfer_state_events`'e append eder — ikisi
+   * aynı atomik blokta (`docs/04_BACKEND_SPEC.md` §7).
+   *
+   * Bu iterasyonda audit yazımı **burada değil** çağıran serviste yapılır
+   * (`TransfersService.confirm` aynı `$transaction` içinde `TRANSFER_STATE_CHANGED`
+   * kaydını düşer, `docs/04` §7 kalıbı) — state machine'in `AuditService`
+   * bağımlılığı yoktur.
+   */
+  async transitionTo(
+    tx: Prisma.TransactionClient,
+    transferId: string,
+    toState: TransferState,
+    actor: string,
+  ): Promise<Transfer> {
+    const current = await this.repository.findByIdInTx(tx, transferId);
+    if (!current) {
+      // Geçiş öncesi servis katmanı transfer'i zaten çekti; buraya düşmesi
+      // eşzamanlı silme demektir — geçersiz geçiş olarak ele alınır.
+      throw new TransferInvalidTransitionException();
+    }
+
+    try {
+      this.assertTransitionAllowed(current.state, toState);
+    } catch (error) {
+      if (error instanceof InvalidTransitionError) {
+        throw new TransferInvalidTransitionException();
+      }
+      throw error;
+    }
+
+    const updated = await this.repository.updateState(tx, transferId, toState);
+    await this.repository.insertStateEvent(tx, {
+      transferId,
+      fromState: current.state,
+      toState,
+      actor,
+    });
+    return updated;
   }
 
   /**
