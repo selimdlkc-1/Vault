@@ -284,7 +284,7 @@ Error code formatı: `<DOMAIN>_<REASON>`, tamamı `UPPER_SNAKE_CASE`. Her kod te
 - *Response:* `200` — `{ data: [{ id, email, role, createdAt }], pagination }`
 - *Hata kodları:* `FORBIDDEN_ROLE`
 - *Audit event:* Yok (okuma)
-- *Not:* S-ADMIN-MINT'in kullanıcı arama alanının (`docs/06_SCREEN_CATALOG.md` S-ADMIN-MINT) bağımlı olduğu, daha önce hiçbir endpoint kataloğunda tanımlanmamış bir okuma endpoint'i — Faz 4 §4.4c'de eklenmiştir, Faz 6'nın admin kullanıcı ekranları da bunu yeniden kullanabilir.
+- *Not:* S-ADMIN-MINT'in kullanıcı arama alanının (`docs/06_SCREEN_CATALOG.md` S-ADMIN-MINT) bağımlı olduğu, daha önce hiçbir endpoint kataloğunda tanımlanmamış bir okuma endpoint'i — Faz 4 §4.4b'de (`POST /admin/mint` ile aynı iterasyonda, `admin/` modülü ilk oluşturulurken) eklenmiştir; Faz 4 §4.4c ekranı ve Faz 6'nın admin kullanıcı ekranları da bunu yeniden kullanır.
 
 **`POST /api/v1/admin/mint`**
 - *Yetki:* `Admin`

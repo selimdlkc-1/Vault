@@ -194,6 +194,25 @@ export class WebhookSignatureInvalidException extends DomainException {
   }
 }
 
+/**
+ * `502 CHAIN_PROVIDER_UNAVAILABLE` — bir RPC / Alchemy / TronGrid çağrısı geçici
+ * bir sağlayıcı hatasıyla başarısız oldu (`docs/03_API_CONTRACTS.md` §3/§5.8).
+ * `packages/chain-providers`'ın framework-agnostic `ChainProviderUnavailableException`'ı
+ * servis katmanında bu domain exception'a çevrilir; ham RPC hatası yalnızca
+ * structured log'a yazılır, `message`'a yansımaz (`docs/03` §3 mesaj politikası).
+ *
+ * Faz 4 §4.4b: mock kontrat `mint()`'inin `onlyOwner` revert'i de (en yakın
+ * mevcut hata kodu olduğu için) bu koda eşlenir — yeni bir kod icat edilmez.
+ */
+export class ChainProviderUnavailableException extends DomainException {
+  readonly code = "CHAIN_PROVIDER_UNAVAILABLE";
+  readonly httpStatus = 502;
+
+  constructor() {
+    super("Zincir sağlayıcıya şu anda ulaşılamıyor, lütfen tekrar deneyin.");
+  }
+}
+
 export interface ValidationIssue {
   field: string;
   reason: string;

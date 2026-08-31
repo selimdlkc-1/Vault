@@ -10,6 +10,11 @@
 // Faz 3 §3.6a: chain_movements (movement-index worker'ının Alchemy webhook + Tron
 // polling ile indexlediği ham zincir hareket kaydı — GET /movements bu fazda
 // yalnızca bu kaynağı döner, transfers birleşimi Faz 5, mimari-kararlar W-006).
+// Faz 4 §4.4b: mint_operations (admin'in POST /admin/mint ile bir kullanıcı
+// cüzdanına mock ERC-20/TRC-20 test bakiyesi dağıtma işlemi — mock kontratın
+// mint() fonksiyonu gerçekten çağrılır, sonuç mint_operations + audit_logs'a tek
+// transaction içinde yazılır; bir Transfer kaydı değildir, ayrı bir varlıktır —
+// docs/01_DOMAIN_MODEL.md §2.10, docs/02_DATABASE_SCHEMA.md §2.11).
 // Diğer tablolar sonraki fazlarda eklenir.
 
 generator client {
@@ -68,6 +73,7 @@ model User {
   refreshTokens      RefreshToken[]
   wallets            Wallet[]
   portfolioSnapshots PortfolioSnapshot[]
+  mintOperations     MintOperation[] @relation("MintOperationAdmin")
 
   @@map("users")
 }
@@ -119,6 +125,7 @@ model Asset {
   networkAssets  NetworkAsset[]
   balanceCaches  BalanceCache[]
   chainMovements ChainMovement[]
+  mintOperations MintOperation[]
 
   @@unique([networkId, symbol])
   @@map("assets")
@@ -164,6 +171,7 @@ model Wallet {
 
   balanceCaches  BalanceCache[]
   chainMovements ChainMovement[]
+  mintOperations MintOperation[]
 
   @@unique([networkId, address])
   @@index([userId], map: "wallets_user_id_idx")
@@ -233,6 +241,31 @@ model ChainMovement {
   @@index([walletId, occurredAt(sort: Desc)], map: "chain_movements_wallet_id_occurred_at_idx")
   @@index([txHash], map: "chain_movements_tx_hash_idx")
   @@map("chain_movements")
+}
+
+/// docs/02_DATABASE_SCHEMA.md §2.11 — admin'in bir kullanıcı cüzdanına mock
+/// ERC-20/TRC-20 test bakiyesi dağıtma (mint) işlemi (docs/01_DOMAIN_MODEL.md
+/// §2.10 MintOperation). Append-only: hiçbir satır güncellenmez veya silinmez
+/// (yalnızca `created_at`). Bir `Transfer` kaydı değildir — `transfers`'a hiç
+/// dokunmaz. `amount` en küçük birimde (decimals'a göre) BigInt string'idir —
+/// asla JS `number` (`.claude/rules/15-backend-data.md`, mimari-kararlar P-015).
+/// `mint_operations` yazımı + `audit_logs` (`MINT_EXECUTED`) yazımı tek
+/// `$transaction` içinde yapılır (`docs/04_BACKEND_SPEC.md` §7).
+model MintOperation {
+  id        String   @id @default(uuid()) @db.Uuid
+  adminId   String   @map("admin_id") @db.Uuid
+  walletId  String   @map("wallet_id") @db.Uuid
+  assetId   String   @map("asset_id") @db.Uuid
+  amount    String
+  txHash    String?  @map("tx_hash")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  admin  User   @relation("MintOperationAdmin", fields: [adminId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+  asset  Asset  @relation(fields: [assetId], references: [id], onDelete: Restrict, onUpdate: Cascade)
+
+  @@index([walletId], map: "mint_operations_wallet_id_idx")
+  @@map("mint_operations")
 }
 
 /// docs/02_DATABASE_SCHEMA.md §2.12 — uygulama seviyesi denetim izi.

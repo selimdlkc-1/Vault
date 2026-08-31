@@ -9,7 +9,9 @@ export type {
   ChainType,
   DerivedWallet,
   IChainProvider,
+  MintResult,
 } from "./i-chain-provider";
+export { MOCK_ERC20_ABI, MOCK_TRC20_ABI } from "./abi/mock-erc20.abi";
 export { isValidAddress } from "./address-validator";
 export {
   EVM_COIN_TYPE,
@@ -18,6 +20,10 @@ export {
   isValidMnemonic,
 } from "./hd-wallet";
 export { assertChainIdAllowed } from "./chain-id-allowlist";
-export { ChainIdNotAllowedException, NotImplementedException } from "./exceptions";
+export {
+  ChainIdNotAllowedException,
+  ChainProviderUnavailableException,
+  NotImplementedException,
+} from "./exceptions";
 export { EvmProvider, type EvmNetworkConfig } from "./evm-provider";
 export { TronProvider, type TronNetworkConfig } from "./tron-provider";

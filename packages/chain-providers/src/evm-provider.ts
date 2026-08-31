@@ -1,13 +1,18 @@
-import { Contract, HDNodeWallet, JsonRpcProvider } from "ethers";
+import { Contract, HDNodeWallet, JsonRpcProvider, Wallet } from "ethers";
 
+import { MOCK_ERC20_ABI } from "./abi/mock-erc20.abi";
 import { assertChainIdAllowed } from "./chain-id-allowlist";
-import { NotImplementedException } from "./exceptions";
+import {
+  ChainProviderUnavailableException,
+  NotImplementedException,
+} from "./exceptions";
 import { EVM_COIN_TYPE, derivationPath } from "./hd-wallet";
 import type {
   AssetRef,
   BroadcastResult,
   DerivedWallet,
   IChainProvider,
+  MintResult,
 } from "./i-chain-provider";
 
 /**
@@ -74,5 +79,34 @@ export class EvmProvider implements IChainProvider {
 
   broadcastTransaction(): Promise<BroadcastResult> {
     throw new NotImplementedException("EvmProvider.broadcastTransaction");
+  }
+
+  /**
+   * Mock ERC-20 kontratının `mint()`'ini owner cüzdanı adına çağırır ve işlemin
+   * madenlenmesini bekler (`docs/03_API_CONTRACTS.md` §5.8). `amountRaw` ethers'a
+   * `bigint` olarak verilir — string aritmetiği yok, `number`'a çevrilmez.
+   * RPC hatası / `onlyOwner` revert'i (`CALL_EXCEPTION`) tek bir
+   * `ChainProviderUnavailableException`'a sarılır.
+   */
+  async mintToken(
+    contractAddress: string,
+    toAddress: string,
+    amountRaw: string,
+    operatorPrivateKey: string,
+  ): Promise<MintResult> {
+    try {
+      const operator = new Wallet(operatorPrivateKey, this.rpc);
+      const contract = new Contract(contractAddress, MOCK_ERC20_ABI, operator);
+      const tx = (await contract.mint(toAddress, BigInt(amountRaw))) as {
+        hash: string;
+        wait: () => Promise<{ hash: string } | null>;
+      };
+      const receipt = await tx.wait();
+      return { txHash: receipt?.hash ?? tx.hash };
+    } catch (error) {
+      throw new ChainProviderUnavailableException("EvmProvider.mintToken", {
+        cause: error,
+      });
+    }
   }
 }
