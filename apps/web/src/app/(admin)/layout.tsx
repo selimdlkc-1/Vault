@@ -16,12 +16,13 @@ import { messages } from "@/lib/messages";
  * UX kısayolu olarak kontrol edilir: admin değilse geçici olarak `/dashboard`'a
  * yönlendirilir — S-FORBIDDEN-403 Faz 7 §7.4'te gelecek.
  *
- * Admin nav bu iterasyonda TEK linklidir ("Ağ / Varlık Yönetimi"). Mock Mint
- * (Faz 4 §4.4), Audit Log (Faz 6 §6.3), Kullanıcılar (Faz 6 §6.4) kendi
- * fazlarında bu listeyi genişletecektir.
+ * Admin nav: "Ağ / Varlık Yönetimi" (Faz 2 §2.4) + "Mock Mint" (Faz 4 §4.4c).
+ * Audit Log (Faz 6 §6.3), Kullanıcılar (Faz 6 §6.4) kendi fazlarında bu listeyi
+ * genişletecektir.
  */
 const ADMIN_NAV = [
   { href: "/admin/network-assets", label: messages.admin.navNetworkAssets },
+  { href: "/admin/mint", label: messages.admin.navMint },
 ] as const;
 
 export default function AdminLayout({ children }: { children: ReactNode }) {

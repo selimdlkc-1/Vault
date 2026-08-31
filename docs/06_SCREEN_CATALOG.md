@@ -389,8 +389,8 @@ Format: `S-<DOMAIN>-<ACTION>`. `DOMAIN` büyük harfli kısa bir isim (`AUTH`, `
   | --- | --- | --- | --- |
   | Kullanıcı | arama/select (email ile arama) | ✅ | Sistemde kayıtlı bir kullanıcı olmalı |
   | Cüzdan | select (seçili kullanıcının cüzdanları) | ✅ | Kullanıcı seçilmeden aktif olmaz |
-  | Varlık | select (cüzdanın ağındaki aktif varlıklar) | ✅ | — |
-  | Tutar | text (sayısal) | ✅ | Pozitif, ondalık ayracı nokta |
+  | Varlık | select (cüzdanın ağındaki aktif + mock kontrat tabanlı varlıklar) | ✅ | Native coin (ETH/BNB/TRX) mint edilemez, listede yer almaz |
+  | Tutar | text (sayısal) | ✅ | Pozitif, ondalık ayracı nokta; varlığın `decimals` değerinden fazla ondalık basamak reddedilir (istemci `BigInt` ile en küçük birime çevirir) |
 - *Aksiyonlar ve sonuçları:*
   - "Mint Et" → başarılıysa "X USDT mint edildi." toast'ı gösterilir, form sıfırlanır; başarısızsa hata banner'ı.
 - *UX state'leri:*
@@ -398,7 +398,7 @@ Format: `S-<DOMAIN>-<ACTION>`. `DOMAIN` büyük harfli kısa bir isim (`AUTH`, `
   - *Yükleniyor:* "Mint ediliyor..." buton metni.
   - *Hata:* `CHAIN_PROVIDER_UNAVAILABLE` → "Zincir sağlayıcıya şu anda ulaşılamıyor, lütfen tekrar deneyin."; `RESOURCE_NOT_FOUND` → "Seçilen cüzdan veya varlık bulunamadı."
   - *Yetkisiz:* `User` rolü bu route'a giremez, S-FORBIDDEN-403.
-  - *Başarı:* Toast + son mint işlemleri listesi (bu ekranda son 10 işlem gösterilir) güncellenir.
+  - *Başarı:* Toast + son mint işlemleri listesi (bu ekranda son 10 işlem gösterilir) güncellenir. Bu liste yalnızca istemci-taraflıdır — geçerli oturumda yapılan başarılı mint'lerin özeti; sayfa yenilendiğinde sıfırlanır (ayrı bir `GET /admin/mint-operations` endpoint'i yoktur, kalıcı geçmiş Faz 6 §6.3 audit log okuma kapsamıdır).
 - *Kullanılan endpoint'ler:* `GET /api/v1/admin/users?email=` (`docs/03_API_CONTRACTS.md` §5.8), `GET /api/v1/wallets?userId=` (Faz 3 §3.4a'da zaten Admin-farkında teslim edildi, `docs/03` §5.2), `POST /api/v1/admin/mint`
 - *TR mesaj metinleri:* "Mock Token Mint Et", "Kullanıcı", "Cüzdan", "Varlık", "Tutar", "Mint Et", "mint edildi.", "Zincir sağlayıcıya şu anda ulaşılamıyor, lütfen tekrar deneyin."
 
