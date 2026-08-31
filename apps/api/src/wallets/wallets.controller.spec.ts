@@ -120,7 +120,15 @@ class InMemoryWalletsRepository {
 
   create(
     tx: unknown,
-    data: { userId: string; networkId: string; type: Wallet["type"]; address: string },
+    data: {
+      userId: string;
+      networkId: string;
+      type: Wallet["type"];
+      address: string;
+      derivationIndex?: number;
+      encryptedDek?: string;
+      encryptedPrivateKey?: string;
+    },
   ): Promise<Wallet> {
     const row: WalletRowWithBalances = {
       id: randomUUID(),
@@ -128,8 +136,9 @@ class InMemoryWalletsRepository {
       networkId: data.networkId,
       type: data.type,
       address: data.address,
-      derivationIndex: null,
-      encryptedDek: null,
+      derivationIndex: data.derivationIndex ?? null,
+      encryptedDek: data.encryptedDek ?? null,
+      encryptedPrivateKey: data.encryptedPrivateKey ?? null,
       createdAt: new Date("2026-08-28T00:00:00.000Z"),
       updatedAt: new Date("2026-08-28T00:00:00.000Z"),
       balanceCaches: [
@@ -174,6 +183,18 @@ class InMemoryWalletsRepository {
 
   findById(walletId: string): Promise<WalletRowWithBalances | null> {
     return Promise.resolve(this.rows.find((r) => r.id === walletId) ?? null);
+  }
+
+  findMaxDerivationIndex(chainType: "evm" | "tron"): Promise<number | null> {
+    const indexes = this.rows
+      .filter((r) => r.type === "managed" && r.derivationIndex !== null)
+      .filter((r) =>
+        chainType === "tron"
+          ? NETWORKS.find((n) => n.id === r.networkId)?.chainType === "tron"
+          : NETWORKS.find((n) => n.id === r.networkId)?.chainType === "evm",
+      )
+      .map((r) => r.derivationIndex as number);
+    return Promise.resolve(indexes.length > 0 ? Math.max(...indexes) : null);
   }
 }
 
@@ -336,6 +357,90 @@ describe("WalletsController (integration) — POST /api/v1/wallets/watch-only", 
     const res = await post({ networkId: "not-a-uuid", address: VALID_EVM });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  // --- Faz 4 §4.2: POST /api/v1/wallets/managed ---
+
+  // Fixture mnemonic ("test test ... junk") + EVM coinType 60, index 0 →
+  // bilinen Hardhat hesabı #0. Türetme gerçek (`ChainProviderFactory` mock'lanmaz).
+  const MANAGED_EVM_ADDR_0 = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+  // Aynı hesabın private key'i — yanıt/gövdede asla görünmemeli.
+  const MANAGED_EVM_PK_0_FRAGMENT = "ac0974bec39a17e36ba4a6b4d238ff944bacb478";
+
+  function postManaged(body: Record<string, unknown>, token = userToken()) {
+    return request(app.getHttpServer())
+      .post("/api/v1/wallets/managed")
+      .set("Authorization", `Bearer ${token}`)
+      .send(body);
+  }
+
+  it("happy path → 201 + türetilen adres + WALLET_CREATED (type: managed) audit", async () => {
+    const res = await postManaged({ networkId: SEPOLIA_ID });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data).toEqual({
+      id: expect.any(String),
+      userId,
+      networkId: SEPOLIA_ID,
+      type: "managed",
+      address: MANAGED_EVM_ADDR_0,
+      createdAt: expect.any(String),
+    });
+    expect(auditRepo.rows).toEqual([
+      {
+        actorType: "user",
+        actorId: userId,
+        action: "WALLET_CREATED",
+        entityType: "wallet",
+        entityId: res.body.data.id,
+        metadata: { type: "managed" },
+      },
+    ]);
+  });
+
+  it("yanıt gövdesinde private key / DEK alanları YOK (Faz 4 güvenlik onay noktası)", async () => {
+    const res = await postManaged({ networkId: SEPOLIA_ID });
+
+    expect(res.status).toBe(201);
+    expect(res.body.data).not.toHaveProperty("privateKey");
+    expect(res.body.data).not.toHaveProperty("encryptedDek");
+    expect(res.body.data).not.toHaveProperty("encryptedPrivateKey");
+    // Ham gövdede çözülmüş private key'in hiçbir parçası bulunmamalı.
+    expect(JSON.stringify(res.body)).not.toContain(MANAGED_EVM_PK_0_FRAGMENT);
+  });
+
+  it("ikinci managed cüzdan bir sonraki türetme index'ini alır (global sayaç)", async () => {
+    await postManaged({ networkId: SEPOLIA_ID }).expect(201);
+    const res = await postManaged({ networkId: SEPOLIA_ID });
+
+    expect(res.status).toBe(201);
+    // index 1 → Hardhat hesabı #1.
+    expect(res.body.data.address).toBe("0x70997970C51812dc3A010C7d01b50e0d17dc79C8");
+  });
+
+  it("aktif varlığı olmayan ağ → 409 NETWORK_ASSET_INACTIVE", async () => {
+    const res = await postManaged({ networkId: EMPTY_NETWORK_ID });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("NETWORK_ASSET_INACTIVE");
+  });
+
+  it("bilinmeyen networkId → 409 NETWORK_ASSET_INACTIVE", async () => {
+    const res = await postManaged({ networkId: UNKNOWN_ID });
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("NETWORK_ASSET_INACTIVE");
+  });
+
+  it("şemada olmayan alan (address) → 400 VALIDATION_FAILED", async () => {
+    const res = await postManaged({ networkId: SEPOLIA_ID, address: VALID_EVM });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe("VALIDATION_FAILED");
+  });
+
+  it("token yoksa → 401", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/wallets/managed")
+      .send({ networkId: SEPOLIA_ID });
+    expect(res.status).toBe(401);
   });
 
   // --- Faz 3 §3.4a: GET /wallets, GET /wallets/:id ---

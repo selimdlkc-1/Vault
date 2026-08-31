@@ -1,5 +1,10 @@
+import type { ConfigService } from "@nestjs/config";
 import type { Wallet } from "@prisma/client";
+import type { DerivedWallet } from "@vault/chain-providers";
 import type { AuditService } from "../audit/audit.service";
+import type { EnvConfig } from "../config/env.schema";
+import type { ChainProviderFactory } from "../networks/chain-provider.factory";
+import type { EnvelopeEncryptionService } from "./envelope-encryption.service";
 import {
   ForbiddenNotOwnerException,
   ForbiddenRoleException,
@@ -68,6 +73,7 @@ function walletRow(overrides: Partial<Wallet> = {}): Wallet {
     address: VALID_EVM,
     derivationIndex: null,
     encryptedDek: null,
+    encryptedPrivateKey: null,
     createdAt: new Date("2026-08-28T00:00:00.000Z"),
     updatedAt: new Date("2026-08-28T00:00:00.000Z"),
     ...overrides,
@@ -105,6 +111,9 @@ describe("WalletsService.createWatchOnly", () => {
       audit as unknown as AuditService,
       fakePriceCache(),
       fakeMovements(),
+      {} as unknown as ConfigService<EnvConfig, true>,
+      {} as unknown as ChainProviderFactory,
+      {} as unknown as EnvelopeEncryptionService,
     );
   });
 
@@ -212,6 +221,155 @@ describe("WalletsService.createWatchOnly", () => {
   });
 });
 
+// Faz 4 §4.2 — managed cüzdan türetme + envelope encryption.
+describe("WalletsService.createManaged", () => {
+  const MANAGED_ADDR = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+  const DERIVED: DerivedWallet = {
+    address: MANAGED_ADDR,
+    privateKey: `0x${"a".repeat(64)}`,
+  };
+
+  let repository: jest.Mocked<
+    Pick<WalletsRepository, "findMaxDerivationIndex" | "create">
+  >;
+  let networksService: jest.Mocked<
+    Pick<NetworksService, "findNetworkById" | "hasActiveAsset">
+  >;
+  let prisma: { $transaction: jest.Mock };
+  let audit: jest.Mocked<Pick<AuditService, "record">>;
+  let deriveWallet: jest.Mock;
+  let chainProviderFactory: jest.Mocked<Pick<ChainProviderFactory, "getProvider">>;
+  let encryptPrivateKey: jest.Mock;
+  let envelope: jest.Mocked<Pick<EnvelopeEncryptionService, "encryptPrivateKey">>;
+  let configGet: jest.Mock;
+  let service: WalletsService;
+
+  beforeEach(() => {
+    repository = {
+      findMaxDerivationIndex: jest.fn().mockResolvedValue(null),
+      create: jest.fn((tx, data) =>
+        Promise.resolve(
+          walletRow({
+            type: "managed",
+            address: data.address,
+            derivationIndex: data.derivationIndex ?? null,
+            encryptedDek: data.encryptedDek ?? null,
+            encryptedPrivateKey: data.encryptedPrivateKey ?? null,
+          }),
+        ),
+      ),
+    };
+    networksService = {
+      findNetworkById: jest.fn().mockResolvedValue(evmNetwork()),
+      hasActiveAsset: jest.fn().mockResolvedValue(true),
+    };
+    prisma = { $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(TX)) };
+    audit = { record: jest.fn().mockResolvedValue(undefined) };
+    deriveWallet = jest.fn().mockReturnValue(DERIVED);
+    chainProviderFactory = {
+      getProvider: jest.fn().mockReturnValue({ deriveWallet }),
+    };
+    encryptPrivateKey = jest.fn().mockReturnValue({
+      encryptedPrivateKey: "enc-pk",
+      encryptedDek: "enc-dek",
+    });
+    envelope = { encryptPrivateKey };
+    configGet = jest.fn().mockReturnValue("test test test test test test test test test test test junk");
+
+    service = new WalletsService(
+      repository as unknown as WalletsRepository,
+      networksService as unknown as NetworksService,
+      prisma as unknown as PrismaService,
+      audit as unknown as AuditService,
+      fakePriceCache(),
+      fakeMovements(),
+      { get: configGet } as unknown as ConfigService<EnvConfig, true>,
+      chainProviderFactory as unknown as ChainProviderFactory,
+      envelope as unknown as EnvelopeEncryptionService,
+    );
+  });
+
+  it("başarılı: türetilen index 0'dan başlar, key şifrelenir, tek transaction içinde insert + audit", async () => {
+    await service.createManaged(USER_ID, { networkId: SEPOLIA_ID });
+
+    expect(chainProviderFactory.getProvider).toHaveBeenCalledWith({
+      chainType: "evm",
+      chainId: "11155111",
+    });
+    expect(deriveWallet).toHaveBeenCalledWith(
+      "test test test test test test test test test test test junk",
+      0,
+    );
+    // Türetilen private key doğrudan envelope servisine geçer.
+    expect(encryptPrivateKey).toHaveBeenCalledWith(DERIVED.privateKey);
+    expect(repository.create).toHaveBeenCalledWith(TX, {
+      userId: USER_ID,
+      networkId: SEPOLIA_ID,
+      type: "managed",
+      address: MANAGED_ADDR,
+      derivationIndex: 0,
+      encryptedDek: "enc-dek",
+      encryptedPrivateKey: "enc-pk",
+    });
+    expect(audit.record).toHaveBeenCalledWith(TX, {
+      actorType: "user",
+      actorId: USER_ID,
+      action: "WALLET_CREATED",
+      entityType: "wallet",
+      entityId: expect.any(String),
+      metadata: { type: "managed" },
+    });
+  });
+
+  it("yanıt body'sinde private key / envelope alanları yok (Faz 4 güvenlik sınırı)", async () => {
+    const result = await service.createManaged(USER_ID, { networkId: SEPOLIA_ID });
+
+    expect(result).toEqual({
+      id: expect.any(String),
+      userId: USER_ID,
+      networkId: SEPOLIA_ID,
+      type: "managed",
+      address: MANAGED_ADDR,
+      createdAt: expect.any(String),
+    });
+    expect(result).not.toHaveProperty("privateKey");
+    expect(result).not.toHaveProperty("encryptedDek");
+    expect(result).not.toHaveProperty("encryptedPrivateKey");
+    expect(JSON.stringify(result)).not.toContain("a".repeat(64));
+  });
+
+  it("mevcut managed cüzdan varsa sıradaki index = max + 1", async () => {
+    repository.findMaxDerivationIndex.mockResolvedValue(4);
+
+    await service.createManaged(USER_ID, { networkId: SEPOLIA_ID });
+
+    expect(deriveWallet).toHaveBeenCalledWith(expect.any(String), 5);
+    expect(repository.findMaxDerivationIndex).toHaveBeenCalledWith("evm");
+  });
+
+  it("ağ yoksa → NETWORK_ASSET_INACTIVE, türetme/transaction yapılmaz", async () => {
+    networksService.findNetworkById.mockResolvedValue(null);
+
+    await expect(
+      service.createManaged(USER_ID, { networkId: SEPOLIA_ID }),
+    ).rejects.toBeInstanceOf(NetworkAssetInactiveException);
+    expect(deriveWallet).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  // docs/08 §4 senaryo #2.
+  it("aktif (network, asset) çifti yoksa → NETWORK_ASSET_INACTIVE, türetme/transaction yapılmaz", async () => {
+    networksService.hasActiveAsset.mockResolvedValue(false);
+
+    await expect(
+      service.createManaged(USER_ID, { networkId: SEPOLIA_ID }),
+    ).rejects.toBeInstanceOf(NetworkAssetInactiveException);
+    expect(deriveWallet).not.toHaveBeenCalled();
+    expect(encryptPrivateKey).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+});
+
 // Faz 3 §3.2 — `balance-sync` worker'ının kullandığı ince servis metotları.
 // Worker repository'ye doğrudan erişmez; servis passthrough sağlar.
 describe("WalletsService — balance-sync destek metotları", () => {
@@ -232,6 +390,9 @@ describe("WalletsService — balance-sync destek metotları", () => {
       {} as unknown as AuditService,
       fakePriceCache(),
       fakeMovements(),
+      {} as unknown as ConfigService<EnvConfig, true>,
+      {} as unknown as ChainProviderFactory,
+      {} as unknown as EnvelopeEncryptionService,
     );
   });
 
@@ -284,6 +445,7 @@ describe("WalletsService — cüzdan okuma (listWallets / getWalletById)", () =>
       address: VALID_EVM,
       derivationIndex: null,
       encryptedDek: null,
+      encryptedPrivateKey: null,
       createdAt: new Date("2026-08-28T00:00:00.000Z"),
       updatedAt: new Date("2026-08-28T00:00:00.000Z"),
       balanceCaches: [
@@ -322,6 +484,9 @@ describe("WalletsService — cüzdan okuma (listWallets / getWalletById)", () =>
       {} as unknown as AuditService,
       fakePriceCache({ ETH: "2000", USDT: "1" }),
       fakeMovements(),
+      {} as unknown as ConfigService<EnvConfig, true>,
+      {} as unknown as ChainProviderFactory,
+      {} as unknown as EnvelopeEncryptionService,
     );
   });
 
@@ -429,6 +594,9 @@ describe("WalletsService — cüzdan okuma (listWallets / getWalletById)", () =>
       {} as unknown as AuditService,
       fakePriceCache(),
       fakeMovements(),
+      {} as unknown as ConfigService<EnvConfig, true>,
+      {} as unknown as ChainProviderFactory,
+      {} as unknown as EnvelopeEncryptionService,
     );
 
     const detail = await service.getWalletById(USER_ID, "user", WALLET_ID);

@@ -1,7 +1,9 @@
 import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from "@nestjs/common";
 import {
+  createManagedWalletSchema,
   createWatchOnlyWalletSchema,
   listWalletsQuerySchema,
+  type CreateManagedWalletInput,
   type CreateWatchOnlyWalletInput,
   type ListWalletsQuery,
 } from "@vault/types";
@@ -67,5 +69,19 @@ export class WalletsController {
     body: CreateWatchOnlyWalletInput,
   ): Promise<WalletView> {
     return this.walletsService.createWatchOnly(userId, body);
+  }
+
+  /**
+   * `POST /wallets/managed` (`docs/03_API_CONTRACTS.md` §5.2). Kullanıcı yalnızca
+   * ağı seçer; adres ve private key backend'de HD wallet'tan türetilir. Yanıt
+   * `WalletView` — private key / envelope alanları hiçbir zaman dönmez.
+   */
+  @Post("managed")
+  createManaged(
+    @CurrentUser("id") userId: string,
+    @Body(new ZodValidationPipe(createManagedWalletSchema))
+    body: CreateManagedWalletInput,
+  ): Promise<WalletView> {
+    return this.walletsService.createManaged(userId, body);
   }
 }

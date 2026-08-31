@@ -22,6 +22,20 @@ export interface BroadcastResult {
   readonly txHash: string;
 }
 
+/**
+ * HD wallet türetmesinin çıktısı (`docs/01_DOMAIN_MODEL.md` §5.1 Managed akışı).
+ * `privateKey` yalnızca çağıranın (`WalletsService`) bellek-içi akışına döner;
+ * hiçbir log/yanıt/cache'e yazılmaz (`.claude/rules/03-security-baseline.md`
+ * madde 1) — `WalletsService` bunu doğrudan `EnvelopeEncryptionService`'e geçirir.
+ *
+ * `privateKey` biçimi ağ ailesinin imzalama SDK'sının beklediği kanonik biçimdir:
+ * EVM için `0x` önekli hex (ethers), Tron için `0x` öneksiz hex (tronweb).
+ */
+export interface DerivedWallet {
+  readonly address: string;
+  readonly privateKey: string;
+}
+
 export interface IChainProvider {
   /** Hangi implementasyonun kullanıldığını ayırt eder. */
   readonly chainType: ChainType;
@@ -31,6 +45,15 @@ export interface IChainProvider {
    * string olarak döner (`balance-sync` worker'ı çağırır, Faz 3 §3.2).
    */
   getBalance(address: string, asset: AssetRef): Promise<string>;
+
+  /**
+   * `HD_WALLET_MNEMONIC`'ten `m/44'/<coinType>'/0'/0/<index>` yoluyla bir cüzdan
+   * türetir (`docs/01_DOMAIN_MODEL.md` §5.1, `docs/mimari-kararlar.md` W-001).
+   * `coinType` implementasyona sabittir: EVM 60, Tron 195. Türetme secp256k1
+   * ile zincir-agnostiktir; yalnızca adres kodlaması ağa göre değişir. Senkron —
+   * RPC çağrısı yapmaz. `POST /wallets/managed` içinde `WalletsService` çağırır.
+   */
+  deriveWallet(mnemonic: string, index: number): DerivedWallet;
 
   /**
    * İmzalı ham işlemi zincire yayınlar ve tx hash'ini döner. Faz 5 dolduracak.

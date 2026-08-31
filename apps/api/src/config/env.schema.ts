@@ -1,3 +1,4 @@
+import { isValidMnemonic } from "@vault/chain-providers";
 import { z } from "zod";
 
 /**
@@ -23,12 +24,13 @@ export const envSchema = z.object({
   MASTER_ENCRYPTION_KEY: z
     .string()
     .regex(/^[0-9a-fA-F]{64}$/, "MASTER_ENCRYPTION_KEY 32 byte'lık hex string (64 karakter) olmalı"),
+  // ethers v6'nın kendi BIP-39 doğrulayıcısı (kelime listesi + checksum) —
+  // yeni bir `bip39` bağımlılığı eklenmez (Faz 4 §4.2). Managed cüzdan
+  // türetmesinin kök seed'i; `MASTER_ENCRYPTION_KEY` kadar kritik, log'a
+  // asla yazılmaz (`docs/04_BACKEND_SPEC.md` §10).
   HD_WALLET_MNEMONIC: z
     .string()
-    .refine(
-      (value) => value.trim().split(/\s+/).length >= 12,
-      "HD_WALLET_MNEMONIC en az 12 kelimelik bir BIP-39 mnemonic olmalı",
-    ),
+    .refine(isValidMnemonic, "HD_WALLET_MNEMONIC geçerli bir BIP-39 mnemonic olmalı"),
   MINT_OPERATOR_PRIVATE_KEY: z
     .string()
     .regex(/^0x[0-9a-fA-F]{64}$/, "MINT_OPERATOR_PRIVATE_KEY 0x önekli 32 byte'lık hex string olmalı"),
