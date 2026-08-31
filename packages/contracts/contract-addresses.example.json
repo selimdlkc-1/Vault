@@ -1,0 +1,5 @@
+[
+  { "chainId": "11155111", "symbol": "USDT", "address": "0xDEPLOYED_SEPOLIA_MOCK_USDT_ADDRESS" },
+  { "chainId": "97", "symbol": "USDT", "address": "0xDEPLOYED_BSC_TESTNET_MOCK_USDT_ADDRESS" },
+  { "chainId": "shasta", "symbol": "USDT", "address": "TDeployedShastaMockUsdtAddress" }
+]
