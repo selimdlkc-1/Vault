@@ -11,6 +11,7 @@ import { MovementsModule } from "./movements/movements.module";
 import { NetworksModule } from "./networks/networks.module";
 import { PortfolioModule } from "./portfolio/portfolio.module";
 import { PrismaModule } from "./prisma/prisma.module";
+import { TransfersModule } from "./transfers/transfers.module";
 import { WalletsModule } from "./wallets/wallets.module";
 import { BalanceSyncModule } from "./workers/balance-sync/balance-sync.module";
 import { MovementIndexModule } from "./workers/movement-index/movement-index.module";
@@ -42,6 +43,7 @@ import { PriceSyncModule } from "./workers/price-sync/price-sync.module";
     AuthModule,
     NetworksModule,
     WalletsModule,
+    TransfersModule,
     AdminModule,
     PortfolioModule,
     MovementsModule,

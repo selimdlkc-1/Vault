@@ -5,4 +5,5 @@ export * from "./schemas/mint.schema";
 export * from "./schemas/movement.schema";
 export * from "./schemas/network-asset.schema";
 export * from "./schemas/portfolio.schema";
+export * from "./schemas/transfer.schema";
 export * from "./schemas/wallet.schema";

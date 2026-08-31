@@ -12,6 +12,7 @@ import {
   ResourceNotFoundException,
   WalletAddressAlreadyExistsException,
   WalletAddressInvalidFormatException,
+  WalletNotManagedException,
 } from "../common/exceptions/domain.exception";
 import { PriceCacheService } from "../common/price-cache.service";
 import { calculateUsdtValue } from "../common/usdt-conversion.util";
@@ -81,6 +82,17 @@ export interface PaginationMeta {
 export interface WalletListResult {
   data: WalletListItemView[];
   pagination: PaginationMeta;
+}
+
+/**
+ * `findOwnedManagedWallet` dönüşü — transfer draft'ının ihtiyaç duyduğu minimum
+ * cüzdan bağlamı (Faz 5 §5.1). `networkId` transfer kaydının `network_id`'sini
+ * doldurur (gönderen cüzdanın ağı) ve İterasyon 2'nin cross-network guard'ının
+ * girdisidir.
+ */
+export interface OwnedManagedWallet {
+  id: string;
+  networkId: string;
 }
 
 /** `GET /wallets` filtre girdisi (rol dallanması `userId` üzerinden). */
@@ -390,6 +402,32 @@ export class WalletsService {
       createdAt: wallet.createdAt.toISOString(),
       balances,
     };
+  }
+
+  /**
+   * Bir transfer draft'ının gönderen cüzdanını çözer (Faz 5 §5.1 —
+   * `TransfersService` `WalletsModule`'den bu servisi enjekte eder,
+   * `docs/04_BACKEND_SPEC.md` §3). Sırasıyla:
+   * - Cüzdan yok **veya** başka kullanıcıya ait → `FORBIDDEN_NOT_OWNER` (varlık
+   *   sızıntısını önlemek için ikisi ayrılmaz — `docs/03` §5.4 hata listesi
+   *   `RESOURCE_NOT_FOUND` içermez).
+   * - Cüzdan `watch_only` → `WALLET_NOT_MANAGED` (`docs/01` §4 madde 5).
+   *
+   * Cross-network guard / `(network, asset)` aktiflik / bakiye kontrolü burada
+   * **yapılmaz** — onlar `POST /transfers/:id/confirm`'ün (İterasyon 2) kapsamı.
+   */
+  async findOwnedManagedWallet(
+    userId: string,
+    walletId: string,
+  ): Promise<OwnedManagedWallet> {
+    const wallet = await this.repository.findByIdLean(walletId);
+    if (!wallet || wallet.userId !== userId) {
+      throw new ForbiddenNotOwnerException();
+    }
+    if (wallet.type !== "managed") {
+      throw new WalletNotManagedException();
+    }
+    return { id: wallet.id, networkId: wallet.networkId };
   }
 
   /**
