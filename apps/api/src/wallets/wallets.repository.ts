@@ -2,13 +2,33 @@ import { Injectable } from "@nestjs/common";
 import type { ChainType, Prisma, Wallet, WalletType } from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
-/** `wallets` insert girdisi — watch-only akışı (Faz 3 §3.1). */
+/**
+ * `wallets` insert girdisi. Watch-only akışı (Faz 3 §3.1) yalnızca ilk dört
+ * alanı verir; managed akışı (Faz 4 §4.2) ayrıca türetme index'i + iki katmanlı
+ * envelope ciphertext'lerini geçirir. `type = 'watch_only'` iken bu üç alan
+ * `undefined` kalır (`docs/02_DATABASE_SCHEMA.md` §2.5 kuralı, servis katmanında
+ * zorlanır).
+ */
 export interface CreateWalletData {
   userId: string;
   networkId: string;
   type: Wallet["type"];
   address: string;
+  derivationIndex?: number;
+  encryptedDek?: string;
+  encryptedPrivateKey?: string;
 }
+
+/**
+ * `create()` dönüşü — bilinçli olarak yalnızca API yanıtına giren güvenli
+ * alanlar. `encrypted_dek` / `encrypted_private_key` **asla** select edilmez
+ * (`docs/02_DATABASE_SCHEMA.md` §6 — bu kolonlar yalnızca Faz 5 imzalama
+ * worker'ının servis katmanınca okunur).
+ */
+export type CreatedWallet = Pick<
+  Wallet,
+  "id" | "userId" | "networkId" | "type" | "address" | "createdAt"
+>;
 
 /**
  * `balance-sync` worker'ının işlediği en küçük birim (Faz 3 §3.2): bir cüzdan +
@@ -120,17 +140,49 @@ export class WalletsRepository {
   /**
    * Cüzdanı çağıranın `$transaction`'ı içinde yaratır (`docs/04_BACKEND_SPEC.md`
    * §7 — `wallets` insert + `audit_logs` yazımı atomik). `type = 'watch_only'`
-   * için `derivation_index` / `encrypted_dek` yazılmaz (NULL kalır).
+   * için `derivation_index` / `encrypted_dek` / `encrypted_private_key`
+   * verilmez, NULL kalır; `type = 'managed'` için üçü de servis katmanından gelir
+   * (`docs/02_DATABASE_SCHEMA.md` §2.5).
    */
-  create(tx: Prisma.TransactionClient, data: CreateWalletData): Promise<Wallet> {
+  create(
+    tx: Prisma.TransactionClient,
+    data: CreateWalletData,
+  ): Promise<CreatedWallet> {
     return tx.wallet.create({
       data: {
         userId: data.userId,
         networkId: data.networkId,
         type: data.type,
         address: data.address,
+        derivationIndex: data.derivationIndex,
+        encryptedDek: data.encryptedDek,
+        encryptedPrivateKey: data.encryptedPrivateKey,
+      },
+      select: {
+        id: true,
+        userId: true,
+        networkId: true,
+        type: true,
+        address: true,
+        createdAt: true,
       },
     });
+  }
+
+  /**
+   * Bir `chainType`'a ait managed cüzdanlar arasında en yüksek `derivation_index`
+   * (yoksa `null`). Sıradaki index tüm ağlar arası **tek bir global sayaçtır**:
+   * `m/44'/<coinType>'/0'/0/<index>` yolu yalnızca coinType'a bağlı olduğundan
+   * (EVM ağları coinType 60'ı paylaşır), kullanıcı/ağ bazlı ayrı sayaç tutulmaz
+   * (Faz 4 §4.2). İş kuralı yok — sıradaki index'i servis hesaplar.
+   */
+  async findMaxDerivationIndex(chainType: ChainType): Promise<number | null> {
+    const row = await this.prisma.wallet.findFirst({
+      where: { type: "managed", network: { chainType } },
+      orderBy: { derivationIndex: "desc" },
+      select: { derivationIndex: true },
+    });
+    return row?.derivationIndex ?? null;
   }
 
   /**

@@ -1,6 +1,10 @@
 import { Injectable } from "@nestjs/common";
+import { ConfigService } from "@nestjs/config";
 import type { UserRole, WalletType } from "@prisma/client";
 import { isValidAddress } from "@vault/chain-providers";
+import type { EnvConfig } from "../config/env.schema";
+import { ChainProviderFactory } from "../networks/chain-provider.factory";
+import { EnvelopeEncryptionService } from "./envelope-encryption.service";
 import {
   ForbiddenNotOwnerException,
   ForbiddenRoleException,
@@ -108,6 +112,11 @@ export class WalletsService {
     // `GET /wallets/:id`'in son 5 zincir hareketi (Faz 3 §3.6a) — worker
     // repository'ye değil domain servisine bağımlıdır (`.claude/rules/10`).
     private readonly movements: MovementsService,
+    // Managed cüzdan türetme (Faz 4 §4.2): `HD_WALLET_MNEMONIC` +
+    // `IChainProvider.deriveWallet` + `EnvelopeEncryptionService`.
+    private readonly config: ConfigService<EnvConfig, true>,
+    private readonly chainProviderFactory: ChainProviderFactory,
+    private readonly envelopeEncryption: EnvelopeEncryptionService,
   ) {}
 
   /**
@@ -164,6 +173,92 @@ export class WalletsService {
         entityType: "wallet",
         entityId: created.id,
         metadata: { type: "watch_only" },
+      });
+      return created;
+    });
+
+    return {
+      id: wallet.id,
+      userId: wallet.userId,
+      networkId: wallet.networkId,
+      type: wallet.type,
+      address: wallet.address,
+      createdAt: wallet.createdAt.toISOString(),
+    };
+  }
+
+  /**
+   * `POST /wallets/managed` (`docs/03_API_CONTRACTS.md` §5.2,
+   * `docs/01_DOMAIN_MODEL.md` §5.1 Managed akışı, `docs/mimari-kararlar.md`
+   * W-001/SEC-006), sırasıyla:
+   * 1. Ağ + `chainType` okunur (yoksa `NETWORK_ASSET_INACTIVE` — §5.2 hata
+   *    listesi RESOURCE_NOT_FOUND içermez, watch-only kalıbının aynısı).
+   * 2. `(network, asset)` aktiflik kontrolü — aktif varlık yoksa
+   *    `NETWORK_ASSET_INACTIVE` (`docs/01` §4 madde 1).
+   * 3. `chainType`'a göre `IChainProvider` seçilir; `findMaxDerivationIndex` ile
+   *    sıradaki global index hesaplanır (`m/44'/<coinType>'/0'/0/<index>` yolu
+   *    yalnızca coinType'a bağlı — Sepolia + BSC Testnet aynı sayacı paylaşır).
+   * 4. `deriveWallet(mnemonic, index)` → adres + private key (bellek-içi).
+   * 5. `EnvelopeEncryptionService.encryptPrivateKey` → iki katmanlı ciphertext.
+   * 6. Tek `$transaction`: `wallets` insert (`derivationIndex` + iki ciphertext)
+   *    + `WALLET_CREATED` audit (`metadata: { type: 'managed' }`).
+   *
+   * Güvenlik sınırı (`.claude/rules/03-security-baseline.md` madde 1): türetilen
+   * private key hiçbir log/yanıt/cache'e yazılmaz — yalnızca `deriveWallet`'ın
+   * dönüşünden doğrudan `encryptPrivateKey`'e geçer, yerel değişkende tutulmaz.
+   * Dönüş `WalletView`'dır; `encryptedDek`/`encryptedPrivateKey`/`privateKey`
+   * alanları yoktur.
+   */
+  async createManaged(
+    userId: string,
+    input: { networkId: string },
+  ): Promise<WalletView> {
+    const network = await this.networksService.findNetworkById(input.networkId);
+    if (!network) {
+      throw new NetworkAssetInactiveException();
+    }
+
+    const hasActiveAsset = await this.networksService.hasActiveAsset(
+      input.networkId,
+    );
+    if (!hasActiveAsset) {
+      throw new NetworkAssetInactiveException();
+    }
+
+    const provider = this.chainProviderFactory.getProvider({
+      chainType: network.chainType,
+      chainId: network.chainId,
+    });
+
+    const maxIndex = await this.repository.findMaxDerivationIndex(
+      network.chainType,
+    );
+    const derivationIndex = maxIndex === null ? 0 : maxIndex + 1;
+
+    const derived = provider.deriveWallet(
+      this.config.get("HD_WALLET_MNEMONIC"),
+      derivationIndex,
+    );
+    const { encryptedPrivateKey, encryptedDek } =
+      this.envelopeEncryption.encryptPrivateKey(derived.privateKey);
+
+    const wallet = await this.prisma.$transaction(async (tx) => {
+      const created = await this.repository.create(tx, {
+        userId,
+        networkId: input.networkId,
+        type: "managed",
+        address: derived.address,
+        derivationIndex,
+        encryptedDek,
+        encryptedPrivateKey,
+      });
+      await this.audit.record(tx, {
+        actorType: "user",
+        actorId: userId,
+        action: "WALLET_CREATED",
+        entityType: "wallet",
+        entityId: created.id,
+        metadata: { type: "managed" },
       });
       return created;
     });

@@ -139,21 +139,25 @@ model NetworkAsset {
 }
 
 /// docs/02_DATABASE_SCHEMA.md §2.5 — kullanıcının portföyünü oluşturan cüzdanlar.
-/// Faz 3 §3.1: yalnızca `watch_only` oluşturma yolu var; `managed` cüzdan
-/// türetme + `encrypted_private_key` kolonu Faz 4 §4.1/§4.2'de eklenir.
-/// `type = 'watch_only'` iken `derivation_index` ve `encrypted_dek` `NULL`
-/// kalmalıdır — Prisma koşullu CHECK desteklemediğinden bu kural servis
-/// katmanında (`WalletsService`) zorlanır (`docs/02` §2.5 notu).
+/// Faz 3 §3.1: `watch_only` oluşturma yolu. Faz 4 §4.2: `managed` cüzdan türetme —
+/// `encrypted_private_key` kolonu bu additive migration'da eklenir (Faz 3'te
+/// `wallets` ilk oluşturulduğunda yalnızca `encrypted_dek` vardı, envelope
+/// encryption'ın ikinci katmanı için eksikti; mevcut watch-only satırları
+/// etkilenmez — `docs/02` §2.5, `docs/mimari-kararlar.md` SEC-006).
+/// `type = 'watch_only'` iken `derivation_index`, `encrypted_dek` ve
+/// `encrypted_private_key` `NULL` kalmalıdır — Prisma koşullu CHECK
+/// desteklemediğinden bu kural servis katmanında (`WalletsService`) zorlanır.
 model Wallet {
-  id              String     @id @default(uuid()) @db.Uuid
-  userId          String     @map("user_id") @db.Uuid
-  networkId       String     @map("network_id") @db.Uuid
-  type            WalletType
-  address         String
-  derivationIndex Int?       @map("derivation_index")
-  encryptedDek    String?    @map("encrypted_dek")
-  createdAt       DateTime   @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt       DateTime   @updatedAt @map("updated_at") @db.Timestamptz
+  id                  String     @id @default(uuid()) @db.Uuid
+  userId              String     @map("user_id") @db.Uuid
+  networkId           String     @map("network_id") @db.Uuid
+  type                WalletType
+  address             String
+  derivationIndex     Int?       @map("derivation_index")
+  encryptedDek        String?    @map("encrypted_dek")
+  encryptedPrivateKey String?    @map("encrypted_private_key")
+  createdAt           DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime   @updatedAt @map("updated_at") @db.Timestamptz
 
   user    User    @relation(fields: [userId], references: [id], onDelete: Restrict, onUpdate: Cascade)
   network Network @relation(fields: [networkId], references: [id], onDelete: Restrict, onUpdate: Cascade)

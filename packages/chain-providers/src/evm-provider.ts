@@ -1,8 +1,14 @@
-import { Contract, JsonRpcProvider } from "ethers";
+import { Contract, HDNodeWallet, JsonRpcProvider } from "ethers";
 
 import { assertChainIdAllowed } from "./chain-id-allowlist";
 import { NotImplementedException } from "./exceptions";
-import type { AssetRef, BroadcastResult, IChainProvider } from "./i-chain-provider";
+import { EVM_COIN_TYPE, derivationPath } from "./hd-wallet";
+import type {
+  AssetRef,
+  BroadcastResult,
+  DerivedWallet,
+  IChainProvider,
+} from "./i-chain-provider";
 
 /**
  * EVM ağ yapılandırması. Sepolia ve BSC Testnet aynı `EvmProvider` kodunu
@@ -50,6 +56,20 @@ export class EvmProvider implements IChainProvider {
     const contract = new Contract(asset.contractAddress, ERC20_BALANCE_OF_ABI, this.rpc);
     const balance = (await contract.balanceOf(address)) as bigint;
     return balance.toString();
+  }
+
+  /**
+   * `m/44'/60'/0'/0/<index>` yoluyla EVM cüzdanı türetir (Sepolia + BSC Testnet
+   * ortak coinType 60). Adres EIP-55 checksum'lı, `privateKey` `0x` önekli hex
+   * (ethers kanonik biçimi). RPC çağrısı yapmaz.
+   */
+  deriveWallet(mnemonic: string, index: number): DerivedWallet {
+    const node = HDNodeWallet.fromPhrase(
+      mnemonic,
+      undefined,
+      derivationPath(EVM_COIN_TYPE, index),
+    );
+    return { address: node.address, privateKey: node.privateKey };
   }
 
   broadcastTransaction(): Promise<BroadcastResult> {

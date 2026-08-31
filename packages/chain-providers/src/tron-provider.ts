@@ -1,8 +1,15 @@
+import { HDNodeWallet } from "ethers";
 import { TronWeb } from "tronweb";
 
 import { assertChainIdAllowed } from "./chain-id-allowlist";
 import { NotImplementedException } from "./exceptions";
-import type { AssetRef, BroadcastResult, IChainProvider } from "./i-chain-provider";
+import { TRON_COIN_TYPE, derivationPath } from "./hd-wallet";
+import type {
+  AssetRef,
+  BroadcastResult,
+  DerivedWallet,
+  IChainProvider,
+} from "./i-chain-provider";
 
 /**
  * Tron ağ yapılandırması. Tron Shasta, EVM ağlarından ayrı bir SDK (tronweb)
@@ -57,6 +64,27 @@ export class TronProvider implements IChainProvider {
     // not set" hatası verebilir; sorgulanan adres owner olarak yeterlidir.
     const raw: unknown = await contract.balanceOf(address).call({ from: address });
     return BigInt((raw as { toString(): string }).toString()).toString();
+  }
+
+  /**
+   * `m/44'/195'/0'/0/<index>` yoluyla Tron cüzdanı türetir. Türetme secp256k1
+   * ile EVM ile aynıdır (`HDNodeWallet.fromPhrase` zincir-agnostik); yalnızca
+   * çıkan raw private key `TronWeb.address.fromPrivateKey()` ile Tron
+   * base58check adresine kodlanır. `privateKey` `0x` öneksiz hex (tronweb
+   * kanonik biçimi). RPC çağrısı yapmaz.
+   */
+  deriveWallet(mnemonic: string, index: number): DerivedWallet {
+    const node = HDNodeWallet.fromPhrase(
+      mnemonic,
+      undefined,
+      derivationPath(TRON_COIN_TYPE, index),
+    );
+    const privateKey = node.privateKey.slice(2);
+    const address = TronWeb.address.fromPrivateKey(privateKey);
+    if (address === false) {
+      throw new Error("Tron adresi türetilemedi (geçersiz private key).");
+    }
+    return { address, privateKey };
   }
 
   broadcastTransaction(): Promise<BroadcastResult> {

@@ -73,8 +73,15 @@ describe("validateEnv", () => {
     ).toThrow();
   });
 
-  it("HD_WALLET_MNEMONIC 12 kelimeden azsa reddedilir", () => {
+  it("HD_WALLET_MNEMONIC geçersiz BIP-39 mnemonic ise reddedilir", () => {
     expect(() => validateEnv({ ...validEnv, HD_WALLET_MNEMONIC: "kısa mnemonic" })).toThrow();
+    // 12 kelime ama BIP-39 checksum'ı tutmuyor → yine reddedilir.
+    expect(() =>
+      validateEnv({
+        ...validEnv,
+        HD_WALLET_MNEMONIC: "test test test test test test test test test test test test",
+      }),
+    ).toThrow();
   });
 
   it("CORS_ORIGIN geçerli bir URL değilse reddedilir", () => {

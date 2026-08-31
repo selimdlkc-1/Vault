@@ -7,9 +7,16 @@ export type {
   AssetRef,
   BroadcastResult,
   ChainType,
+  DerivedWallet,
   IChainProvider,
 } from "./i-chain-provider";
 export { isValidAddress } from "./address-validator";
+export {
+  EVM_COIN_TYPE,
+  TRON_COIN_TYPE,
+  derivationPath,
+  isValidMnemonic,
+} from "./hd-wallet";
 export { assertChainIdAllowed } from "./chain-id-allowlist";
 export { ChainIdNotAllowedException, NotImplementedException } from "./exceptions";
 export { EvmProvider, type EvmNetworkConfig } from "./evm-provider";
