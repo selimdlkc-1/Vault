@@ -1,5 +1,11 @@
 import { Injectable } from "@nestjs/common";
-import type { ChainType, Prisma, Transfer, TransferState } from "@prisma/client";
+import type {
+  ChainType,
+  Prisma,
+  Transfer,
+  TransferState,
+  TransferStateEvent,
+} from "@prisma/client";
 import { PrismaService } from "../prisma/prisma.service";
 
 /**
@@ -8,6 +14,15 @@ import { PrismaService } from "../prisma/prisma.service";
  * (Faz 5 §5.2) sahiplik kontrolü + guard girdileri için bunu okur.
  */
 export type TransferWithOwner = Transfer & { wallet: { userId: string } };
+
+/**
+ * Transfer + sahiplik + tam denetim izi (`transfer_state_events`, zaman
+ * sırasıyla) — `GET /transfers/:id` detay görünümü (Faz 5 §5.6b,
+ * `docs/03_API_CONTRACTS.md` §5.4).
+ */
+export type TransferWithOwnerAndEvents = TransferWithOwner & {
+  stateEvents: TransferStateEvent[];
+};
 
 /**
  * Transfer + `signing` worker'ının ham işlem kurması için gereken ağ/varlık
@@ -108,6 +123,43 @@ export class TransfersRepository {
       where: { id: transferId },
       include: { wallet: { select: { userId: true } } },
     });
+  }
+
+  /**
+   * Tek transfer + sahiplik (`wallet.user_id`) + tam `transfer_state_events`
+   * denetim izi zaman sırasıyla — `GET /transfers/:id` (Faz 5 §5.6b,
+   * `docs/03_API_CONTRACTS.md` §5.4). Bulunamazsa `null`; çağıran servis
+   * sahiplik/rol ile birleştirip `RESOURCE_NOT_FOUND` / `FORBIDDEN_NOT_OWNER`'a
+   * indirger (`GET` hata listesi ikisini de içerir, `confirm`'ün aksine).
+   */
+  findByIdWithOwnerAndEvents(
+    transferId: string,
+  ): Promise<TransferWithOwnerAndEvents | null> {
+    return this.prisma.transfer.findUnique({
+      where: { id: transferId },
+      include: {
+        wallet: { select: { userId: true } },
+        stateEvents: { orderBy: { occurredAt: "asc" } },
+      },
+    });
+  }
+
+  /**
+   * Bir `draft` transfer'i denetim iziyle birlikte kalıcı olarak siler
+   * (`DELETE /transfers/:id` — yalnızca `draft`, `docs/01_DOMAIN_MODEL.md` §5.2
+   * W-005). Çağıranın `$transaction`'ı içinde: önce `transfer_state_events`
+   * (FK `RESTRICT`), sonra `transfers`. Append-only kuralı (`docs/02` §2.8) bir
+   * transfer'in `draft`'ı geçtikten sonraki denetim izini korur; hiç
+   * ilerlememiş bir taslağın tek `null → draft` kaydı, taslağın kendisiyle
+   * birlikte atılır (`docs/mimari-kararlar.md` W-005 / Versiyon Geçmişi 0.7).
+   * `state` alanına yazılmadığından `TransferStateMachine` devreye girmez.
+   */
+  async deleteDraftCascade(
+    tx: Prisma.TransactionClient,
+    transferId: string,
+  ): Promise<void> {
+    await tx.transferStateEvent.deleteMany({ where: { transferId } });
+    await tx.transfer.delete({ where: { id: transferId } });
   }
 
   /**

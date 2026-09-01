@@ -1,6 +1,11 @@
 import { InjectQueue } from "@nestjs/bullmq";
 import { Injectable } from "@nestjs/common";
-import { type ChainType, Prisma, type Transfer } from "@prisma/client";
+import {
+  type ChainType,
+  Prisma,
+  type Transfer,
+  type UserRole,
+} from "@prisma/client";
 import { isValidAddress } from "@vault/chain-providers";
 import type { CreateTransferInput, TransferStateValue } from "@vault/types";
 import type { Queue } from "bullmq";
@@ -11,6 +16,7 @@ import {
   AuthStepUpRequiredException,
   ForbiddenNotOwnerException,
   NetworkAssetInactiveException,
+  ResourceNotFoundException,
   TransferInvalidTransitionException,
   WalletCrossNetworkMismatchException,
   WalletInsufficientBalanceException,
@@ -47,6 +53,28 @@ export interface TransferView {
 export interface CreateDraftResult {
   transfer: TransferView;
   isNew: boolean;
+}
+
+/**
+ * `GET /transfers/:id` yanıtındaki tek denetim izi kaydı
+ * (`transfer_state_events`, `docs/03_API_CONTRACTS.md` §5.4). S-TRANSFER-DETAIL
+ * bunları zaman çizelgesi olarak listeler.
+ */
+export interface TransferStateEventView {
+  fromState: TransferStateValue | null;
+  toState: TransferStateValue;
+  /** `'user'` | `'system'` | `'worker:<name>'`. */
+  actor: string;
+  occurredAt: string;
+  metadata: Record<string, unknown> | null;
+}
+
+/**
+ * `GET /transfers/:id` yanıtı — `TransferView` + tam denetim izi
+ * (`docs/03_API_CONTRACTS.md` §5.4). S-TRANSFER-DETAIL (Faz 5 §5.6b).
+ */
+export interface TransferDetailView extends TransferView {
+  stateEvents: TransferStateEventView[];
 }
 
 /** İstemci-tarafı idempotency penceresi — 24 saat (`docs/03_API_CONTRACTS.md` §7). */
@@ -313,6 +341,66 @@ export class TransfersService {
     );
 
     return { state: updated.state };
+  }
+
+  /**
+   * `GET /transfers/:id` (`docs/03_API_CONTRACTS.md` §5.4) — transfer detay +
+   * tam `transfer_state_events` denetim izi. Sahiplik: kayıt yoksa
+   * `RESOURCE_NOT_FOUND`; başkasının kaydı ve istekte bulunan `Admin` değilse
+   * `FORBIDDEN_NOT_OWNER` (`Admin` salt-okunur muaftır, `docs/04_BACKEND_SPEC.md`
+   * §4 adım 6). `confirm`'ün aksine "yok" ile "başkasının" ayrılır — `GET` hata
+   * listesi ikisini de içerir.
+   */
+  async getById(
+    requesterId: string,
+    requesterRole: UserRole,
+    transferId: string,
+  ): Promise<TransferDetailView> {
+    const transfer =
+      await this.repository.findByIdWithOwnerAndEvents(transferId);
+    if (!transfer) {
+      throw new ResourceNotFoundException("Transfer bulunamadı.");
+    }
+    if (requesterRole !== "admin" && transfer.wallet.userId !== requesterId) {
+      throw new ForbiddenNotOwnerException();
+    }
+
+    return {
+      ...this.toView(transfer),
+      stateEvents: transfer.stateEvents.map((event) => ({
+        fromState: event.fromState,
+        toState: event.toState,
+        actor: event.actor,
+        occurredAt: event.occurredAt.toISOString(),
+        metadata: (event.metadata as Record<string, unknown> | null) ?? null,
+      })),
+    };
+  }
+
+  /**
+   * `DELETE /transfers/:id` (`docs/03_API_CONTRACTS.md` §5.4,
+   * `docs/mimari-kararlar.md` W-005). Yalnızca **sahibinin** ve yalnızca
+   * **`draft`** durumundaki transfer'i silinebilir — `Admin` bu mutasyondan muaf
+   * değildir. Kayıt yok / başkasının → `FORBIDDEN_NOT_OWNER` (varlık sızıntısı
+   * önlemi, `confirm` ile aynı; `DELETE` hata listesi `RESOURCE_NOT_FOUND`
+   * içermez). `draft` değil (terminal dahil) → `TRANSFER_INVALID_TRANSITION`
+   * (`409` — terminal-olmayan durumlarda da iptal yoktur). Taslağın tek
+   * `null → draft` denetim izi kaydı, taslakla birlikte tek `$transaction`'da
+   * atılır (`docs/02_DATABASE_SCHEMA.md` §2.8 istisnası). Audit yazılmaz
+   * (`docs/03` §5.4).
+   */
+  async deleteDraft(userId: string, transferId: string): Promise<void> {
+    const transfer = await this.repository.findByIdWithOwner(transferId);
+    if (!transfer || transfer.wallet.userId !== userId) {
+      throw new ForbiddenNotOwnerException();
+    }
+    if (transfer.state !== "draft") {
+      throw new TransferInvalidTransitionException();
+    }
+
+    await this.prisma.$transaction((tx) =>
+      this.repository.deleteDraftCascade(tx, transferId),
+    );
   }
 
   /**
