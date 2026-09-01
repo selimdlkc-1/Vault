@@ -1,33 +1,23 @@
-import type { Transfer } from "@prisma/client";
+import { TransferState } from "@prisma/client";
 import type { TransfersRepository } from "./transfers.repository";
 import {
+  ALLOWED_TRANSITIONS,
   InvalidTransitionError,
+  TERMINAL_STATES,
   TransferStateMachine,
   type EnterTransferData,
 } from "./transfer-state-machine.service";
+import {
+  TEST_ASSET_ID as ASSET_ID,
+  TEST_NETWORK_ID as NETWORK_ID,
+  TEST_WALLET_ID as WALLET_ID,
+  createTestTransfer,
+} from "./testing/transfer.factory";
 
 const TX = Symbol("tx");
-const WALLET_ID = "11111111-1111-4111-8111-111111111111";
-const NETWORK_ID = "22222222-2222-4222-8222-222222222222";
-const ASSET_ID = "33333333-3333-4333-8333-333333333333";
 
-function transferRow(overrides: Partial<Transfer> = {}): Transfer {
-  return {
-    id: "99999999-9999-4999-8999-999999999999",
-    walletId: WALLET_ID,
-    networkId: NETWORK_ID,
-    assetId: ASSET_ID,
-    toAddress: "0xdead",
-    amount: "1000",
-    state: "draft",
-    txHash: null,
-    failureReason: null,
-    idempotencyKey: "key-1",
-    createdAt: new Date("2026-08-31T00:00:00.000Z"),
-    updatedAt: new Date("2026-08-31T00:00:00.000Z"),
-    ...overrides,
-  };
-}
+/** Ortak factory'ye taşındı (`docs/08` §5) — bu dosya artık kendi kopyasını tutmaz. */
+const transferRow = createTestTransfer;
 
 function enterData(overrides: Partial<EnterTransferData> = {}): EnterTransferData {
   return {
@@ -385,4 +375,67 @@ describe("TransferStateMachine.transitionTo (İterasyon 2 — §5.2)", () => {
       machine.transitionTo(TX as never, "abc", "broadcast", "worker:confirmation"),
     ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
   });
+});
+
+/**
+ * §5.7 — Terminal durum matrisi (`docs/08_TESTING_STRATEGY.md` §4 madde 3,
+ * `docs/01_DOMAIN_MODEL.md` §5.2 "Genel kural", `docs/mimari-kararlar.md` W-003).
+ *
+ * İterasyon 1-5'te her whitelist genişlemesinde terminal-reddi tek tek
+ * doğrulandı; burası o senaryonun **tam matris** hâlidir: üç terminal durumun
+ * (`confirmed`/`failed`/`dropped`) her birinden, sistemdeki *her* duruma geçiş
+ * denemesi reddedilmeli.
+ *
+ * Hedef listesi elle yazılmaz — `@prisma/client`'ın `TransferState` enum'ından
+ * (`docs/02_DATABASE_SCHEMA.md` §2.7, whitelist'in tip kaynağı) türetilir;
+ * kaynak listesi `TERMINAL_STATES` sabitinden gelir. Whitelist'e ileride yeni
+ * bir durum eklenirse matris onu otomatik kapsar
+ * (İterasyon "Risk / dikkat" notu).
+ */
+describe("TransferStateMachine — terminal durum matrisi (§5.7)", () => {
+  const ALL_STATES = Object.values(TransferState);
+  const TERMINAL = [...TERMINAL_STATES];
+
+  let repository: jest.Mocked<
+    Pick<TransfersRepository, "findByIdInTx" | "updateState" | "insertStateEvent">
+  >;
+  let machine: TransferStateMachine;
+
+  beforeEach(() => {
+    repository = {
+      findByIdInTx: jest.fn(),
+      updateState: jest.fn(),
+      insertStateEvent: jest.fn(),
+    };
+    machine = new TransferStateMachine(
+      repository as unknown as TransfersRepository,
+    );
+  });
+
+  it("kapsam: TERMINAL_STATES tam olarak whitelist'te giden geçişi olmayan durumlar", () => {
+    const withOutgoing = new Set(
+      [...ALLOWED_TRANSITIONS.entries()]
+        .filter(([from, targets]) => from !== null && targets.length > 0)
+        .map(([from]) => from as TransferState),
+    );
+    const noOutgoing = ALL_STATES.filter((state) => !withOutgoing.has(state));
+    expect(new Set(noOutgoing)).toEqual(TERMINAL_STATES);
+  });
+
+  it.each(
+    TERMINAL.flatMap((fromState) =>
+      ALL_STATES.map((toState) => [fromState, toState] as const),
+    ),
+  )(
+    "terminal %s → %s: TRANSFER_INVALID_TRANSITION, hiçbir yazım yapılmaz",
+    async (fromState, toState) => {
+      repository.findByIdInTx.mockResolvedValue(transferRow({ state: fromState }));
+
+      await expect(
+        machine.transitionTo(TX as never, "abc", toState, "worker:confirmation"),
+      ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
+      expect(repository.updateState).not.toHaveBeenCalled();
+      expect(repository.insertStateEvent).not.toHaveBeenCalled();
+    },
+  );
 });

@@ -14,46 +14,20 @@ import type { NetworksService } from "../networks/networks.service";
 import type { PrismaService } from "../prisma/prisma.service";
 import type { WalletsService } from "../wallets/wallets.service";
 import type { TransferStateMachine } from "./transfer-state-machine.service";
-import type {
-  TransfersRepository,
-  TransferWithOwner,
-} from "./transfers.repository";
+import type { TransfersRepository } from "./transfers.repository";
 import { TransfersService } from "./transfers.service";
-
-const USER_ID = "11111111-1111-4111-8111-111111111111";
-const OTHER_USER_ID = "10101010-1010-4101-8101-101010101010";
-const WALLET_ID = "22222222-2222-4222-8222-222222222222";
-const NETWORK_ID = "33333333-3333-4333-8333-333333333333";
-const ASSET_ID = "44444444-4444-4444-8444-444444444444";
-const TRANSFER_ID = "99999999-9999-4999-8999-999999999999";
-const KEY = "idem-key-1";
-// Sepolia — geçerli EIP-55 checksum'lı EVM adresi.
-const EVM_ADDRESS = "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045";
-
-function transferRow(overrides: Partial<Transfer> = {}): Transfer {
-  return {
-    id: TRANSFER_ID,
-    walletId: WALLET_ID,
-    networkId: NETWORK_ID,
-    assetId: ASSET_ID,
-    toAddress: EVM_ADDRESS,
-    amount: "1000",
-    state: "draft",
-    txHash: null,
-    failureReason: null,
-    idempotencyKey: KEY,
-    createdAt: new Date("2026-08-31T00:00:00.000Z"),
-    updatedAt: new Date("2026-08-31T00:00:00.000Z"),
-    ...overrides,
-  };
-}
-
-function transferWithOwner(
-  overrides: Partial<Transfer> = {},
-  ownerId = USER_ID,
-): TransferWithOwner {
-  return { ...transferRow(overrides), wallet: { userId: ownerId } };
-}
+import {
+  TEST_ASSET_ID as ASSET_ID,
+  TEST_EVM_ADDRESS as EVM_ADDRESS,
+  TEST_IDEMPOTENCY_KEY as KEY,
+  TEST_NETWORK_ID as NETWORK_ID,
+  TEST_OTHER_USER_ID as OTHER_USER_ID,
+  TEST_OWNER_ID as USER_ID,
+  TEST_TRANSFER_ID as TRANSFER_ID,
+  TEST_WALLET_ID as WALLET_ID,
+  createTestTransfer as transferRow,
+  createTestTransferWithOwner as transferWithOwner,
+} from "./testing/transfer.factory";
 
 const DTO = {
   walletId: WALLET_ID,
