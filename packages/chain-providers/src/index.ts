@@ -14,6 +14,7 @@ export type {
 } from "./i-chain-provider";
 export { MOCK_ERC20_ABI, MOCK_TRC20_ABI } from "./abi/mock-erc20.abi";
 export { isValidAddress } from "./address-validator";
+export { classifyRpcError, type RpcErrorKind } from "./classify-rpc-error";
 export {
   EVM_COIN_TYPE,
   TRON_COIN_TYPE,

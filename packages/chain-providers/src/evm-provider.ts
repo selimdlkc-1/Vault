@@ -2,10 +2,7 @@ import { Contract, HDNodeWallet, Interface, JsonRpcProvider, Wallet } from "ethe
 
 import { MOCK_ERC20_ABI } from "./abi/mock-erc20.abi";
 import { assertChainIdAllowed } from "./chain-id-allowlist";
-import {
-  ChainProviderUnavailableException,
-  NotImplementedException,
-} from "./exceptions";
+import { ChainProviderUnavailableException } from "./exceptions";
 import { EVM_COIN_TYPE, derivationPath } from "./hd-wallet";
 import type {
   AssetRef,
@@ -120,8 +117,23 @@ export class EvmProvider implements IChainProvider {
     }
   }
 
-  broadcastTransaction(): Promise<BroadcastResult> {
-    throw new NotImplementedException("EvmProvider.broadcastTransaction");
+  /**
+   * İmzalı ham hex'i (`signTransaction` çıktısı) `eth_sendRawTransaction` ile
+   * ağa yayınlar ve mempool'a giren işlemin hash'ini döner — blok onayını
+   * beklemez (Faz 5 §5.4). RPC hatası (`INSUFFICIENT_FUNDS`, `NONCE_EXPIRED`,
+   * timeout, ...) `ChainProviderUnavailableException`'a `{ cause }` ile sarılır;
+   * `broadcast` worker'ı `cause`'u `classifyRpcError` ile sınıflandırır.
+   */
+  async broadcastTransaction(signedTxHex: string): Promise<BroadcastResult> {
+    try {
+      const response = await this.rpc.broadcastTransaction(signedTxHex);
+      return { txHash: response.hash };
+    } catch (error) {
+      throw new ChainProviderUnavailableException(
+        "EvmProvider.broadcastTransaction",
+        { cause: error },
+      );
+    }
   }
 
   /**

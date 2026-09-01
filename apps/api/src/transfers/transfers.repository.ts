@@ -123,17 +123,18 @@ export class TransfersRepository {
   }
 
   /**
-   * `transfers.state`'i (ve `failed` geçişlerinde `failure_reason`'ı) çağıranın
-   * `$transaction`'ı içinde günceller. Yalnızca `TransferStateMachine` çağırır
-   * (`.claude/rules/13-critical-modules.md` kesin kural — bu alana başka hiçbir
-   * kod yolu `UPDATE` uygulamaz). `extra.failureReason` verilmezse `failure_reason`
-   * dokunulmaz (mevcut değeri korunur).
+   * `transfers.state`'i (ve `failed` geçişlerinde `failure_reason`'ı,
+   * `signed → broadcast` geçişinde `tx_hash`'i) çağıranın `$transaction`'ı
+   * içinde günceller. Yalnızca `TransferStateMachine` çağırır
+   * (`.claude/rules/13-critical-modules.md` kesin kural — bu alanlara başka
+   * hiçbir kod yolu `UPDATE` uygulamaz). `extra` alanları verilmezse ilgili
+   * kolonlara dokunulmaz (mevcut değer korunur).
    */
   updateState(
     tx: Prisma.TransactionClient,
     transferId: string,
     state: TransferState,
-    extra?: { failureReason?: string },
+    extra?: { failureReason?: string; txHash?: string },
   ): Promise<Transfer> {
     return tx.transfer.update({
       where: { id: transferId },
@@ -142,18 +143,21 @@ export class TransfersRepository {
         ...(extra?.failureReason !== undefined
           ? { failureReason: extra.failureReason }
           : {}),
+        ...(extra?.txHash !== undefined ? { txHash: extra.txHash } : {}),
       },
     });
   }
 
   /**
-   * `signing` worker'ı için transfer + ağ (`chain_type`/`chain_id`) + varlık
-   * (`contract_address`/`decimals`) bağlamı tek sorguda (Faz 5 §5.3). Cüzdanın
-   * şifreli key materyali burada **okunmaz** — o, `WalletsService.getSigningMaterial`
-   * üzerinden `WalletsModule`'den alınır (modül sahipliği, `.claude/rules/10`).
+   * `signing` (§5.3) ve `broadcast` (§5.4) worker'ları için transfer + ağ
+   * (`chain_type`/`chain_id`) + varlık (`contract_address`/`decimals`) bağlamı
+   * tek sorguda. Cüzdanın şifreli key materyali burada **okunmaz** — o,
+   * `WalletsService.getSigningMaterial` üzerinden `WalletsModule`'den alınır
+   * (modül sahipliği, `.claude/rules/10`). Çağıran servis `state` alanına göre
+   * (`pending_signature` / `signed`) worker'a uygunluğu değerlendirir.
    * Bulunamazsa `null`.
    */
-  findByIdForSigning(
+  findByIdWithChainContext(
     transferId: string,
   ): Promise<TransferWithChainContext | null> {
     return this.prisma.transfer.findUnique({

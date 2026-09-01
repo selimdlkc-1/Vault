@@ -1,12 +1,9 @@
 import { HDNodeWallet } from "ethers";
-import { TronWeb } from "tronweb";
+import { TronWeb, Types } from "tronweb";
 
 import { MOCK_TRC20_ABI } from "./abi/mock-erc20.abi";
 import { assertChainIdAllowed } from "./chain-id-allowlist";
-import {
-  ChainProviderUnavailableException,
-  NotImplementedException,
-} from "./exceptions";
+import { ChainProviderUnavailableException } from "./exceptions";
 import { TRON_COIN_TYPE, derivationPath } from "./hd-wallet";
 import type {
   AssetRef,
@@ -146,8 +143,35 @@ export class TronProvider implements IChainProvider {
     }
   }
 
-  broadcastTransaction(): Promise<BroadcastResult> {
-    throw new NotImplementedException("TronProvider.broadcastTransaction");
+  /**
+   * `signTransaction`'ın serialize ettiği imzalı işlemi (`JSON.stringify`)
+   * çözer ve `trx.sendRawTransaction` ile Shasta full-node'una yayınlar; işlem
+   * id'sini (`txid`) döner — blok onayını beklemez (Faz 5 §5.4). tronweb
+   * başarısız yayında exception fırlatmayıp `{ result: false, code, message }`
+   * dönebildiğinden, bu durum da açıkça exception'a çevrilir. Tüm hatalar
+   * `ChainProviderUnavailableException`'a `{ cause }` ile sarılır; `broadcast`
+   * worker'ı `cause`'u `classifyRpcError` ile sınıflandırır (`code` alanı
+   * `SIGERROR`/`CONTRACT_VALIDATE_ERROR` gibi kalıcı hataları ayırt etmede
+   * kullanılır).
+   */
+  async broadcastTransaction(signedTxJson: string): Promise<BroadcastResult> {
+    try {
+      const signed = JSON.parse(signedTxJson) as Types.SignedTransaction;
+      const result = await this.tronWeb.trx.sendRawTransaction(signed);
+      if (!result.result) {
+        const detail = result.code
+          ? `${result.code}: ${result.message ?? ""}`.trim()
+          : "Tron sendRawTransaction sonucu result:false döndü.";
+        // `code`'u koruyan bir hata — `classifyRpcError` bunu `cause` üzerinden okur.
+        throw Object.assign(new Error(detail), { code: result.code });
+      }
+      return { txHash: result.txid };
+    } catch (error) {
+      throw new ChainProviderUnavailableException(
+        "TronProvider.broadcastTransaction",
+        { cause: error },
+      );
+    }
   }
 
   /**
