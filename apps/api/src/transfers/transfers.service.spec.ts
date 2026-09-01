@@ -394,7 +394,9 @@ describe("TransfersService.confirm — step-up + cross-network guard (§5.2)", (
 });
 
 describe("TransfersService.getSigningContext (§5.3 — signing worker)", () => {
-  let repository: jest.Mocked<Pick<TransfersRepository, "findByIdForSigning">>;
+  let repository: jest.Mocked<
+    Pick<TransfersRepository, "findByIdWithChainContext">
+  >;
   let service: TransfersService;
 
   function chainRow(overrides: Partial<Transfer> = {}) {
@@ -407,7 +409,7 @@ describe("TransfersService.getSigningContext (§5.3 — signing worker)", () => 
 
   beforeEach(() => {
     repository = {
-      findByIdForSigning: jest.fn().mockResolvedValue(chainRow()),
+      findByIdWithChainContext: jest.fn().mockResolvedValue(chainRow()),
     };
     service = new TransfersService(
       repository as unknown as TransfersRepository,
@@ -435,17 +437,78 @@ describe("TransfersService.getSigningContext (§5.3 — signing worker)", () => 
   });
 
   it("state pending_signature değilse null (worker idempotent no-op)", async () => {
-    repository.findByIdForSigning.mockResolvedValue(chainRow({ state: "signed" }));
+    repository.findByIdWithChainContext.mockResolvedValue(
+      chainRow({ state: "signed" }),
+    );
     await expect(service.getSigningContext(TRANSFER_ID)).resolves.toBeNull();
   });
 
   it("terminal durumda null", async () => {
-    repository.findByIdForSigning.mockResolvedValue(chainRow({ state: "failed" }));
+    repository.findByIdWithChainContext.mockResolvedValue(
+      chainRow({ state: "failed" }),
+    );
     await expect(service.getSigningContext(TRANSFER_ID)).resolves.toBeNull();
   });
 
   it("transfer yoksa null", async () => {
-    repository.findByIdForSigning.mockResolvedValue(null);
+    repository.findByIdWithChainContext.mockResolvedValue(null);
     await expect(service.getSigningContext(TRANSFER_ID)).resolves.toBeNull();
+  });
+});
+
+describe("TransfersService.getBroadcastContext (§5.4 — broadcast worker)", () => {
+  let repository: jest.Mocked<
+    Pick<TransfersRepository, "findByIdWithChainContext">
+  >;
+  let service: TransfersService;
+
+  function chainRow(overrides: Partial<Transfer> = {}) {
+    return {
+      ...transferRow({ state: "signed", ...overrides }),
+      network: { chainType: "tron" as const, chainId: "shasta" },
+      asset: { contractAddress: null, decimals: 6 },
+    };
+  }
+
+  beforeEach(() => {
+    repository = {
+      findByIdWithChainContext: jest.fn().mockResolvedValue(chainRow()),
+    };
+    service = new TransfersService(
+      repository as unknown as TransfersRepository,
+      {} as unknown as TransferStateMachine,
+      {} as unknown as PrismaService,
+      {} as unknown as WalletsService,
+      {} as unknown as AuthService,
+      {} as unknown as NetworksService,
+      {} as unknown as AuditService,
+      { add: jest.fn() } as never,
+    );
+  });
+
+  it("signed: yalnızca ağ bağlamını döner (imzalı işlem job payload'ında)", async () => {
+    await expect(service.getBroadcastContext(TRANSFER_ID)).resolves.toEqual({
+      transferId: TRANSFER_ID,
+      chain: { chainType: "tron", chainId: "shasta" },
+    });
+  });
+
+  it("state signed değilse null — zaten broadcast (idempotent no-op)", async () => {
+    repository.findByIdWithChainContext.mockResolvedValue(
+      chainRow({ state: "broadcast" }),
+    );
+    await expect(service.getBroadcastContext(TRANSFER_ID)).resolves.toBeNull();
+  });
+
+  it("terminal durumda null", async () => {
+    repository.findByIdWithChainContext.mockResolvedValue(
+      chainRow({ state: "failed" }),
+    );
+    await expect(service.getBroadcastContext(TRANSFER_ID)).resolves.toBeNull();
+  });
+
+  it("transfer yoksa null", async () => {
+    repository.findByIdWithChainContext.mockResolvedValue(null);
+    await expect(service.getBroadcastContext(TRANSFER_ID)).resolves.toBeNull();
   });
 });

@@ -244,4 +244,59 @@ describe("TransferStateMachine.transitionTo (İterasyon 2 — §5.2)", () => {
     ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
     expect(repository.updateState).not.toHaveBeenCalled();
   });
+
+  // --- İterasyon 4 (§5.4): signed → broadcast / failed ---
+
+  it("signed → broadcast: tx_hash aynı updateState çağrısında yazılır, actor worker:broadcast", async () => {
+    repository.findByIdInTx.mockResolvedValue(transferRow({ state: "signed" }));
+    repository.updateState.mockResolvedValue(
+      transferRow({ state: "broadcast", txHash: "0xfeed" }),
+    );
+
+    const result = await machine.transitionTo(
+      TX as never,
+      "abc",
+      "broadcast",
+      "worker:broadcast",
+      { txHash: "0xfeed" },
+    );
+
+    expect(repository.updateState).toHaveBeenCalledWith(TX, "abc", "broadcast", {
+      txHash: "0xfeed",
+    });
+    expect(repository.insertStateEvent).toHaveBeenCalledWith(TX, {
+      transferId: "abc",
+      fromState: "signed",
+      toState: "broadcast",
+      actor: "worker:broadcast",
+    });
+    expect(result.state).toBe("broadcast");
+  });
+
+  it("signed → failed: kalıcı/geçici tükenmiş broadcast hatası failureReason ile", async () => {
+    repository.findByIdInTx.mockResolvedValue(transferRow({ state: "signed" }));
+    repository.updateState.mockResolvedValue(
+      transferRow({ state: "failed", failureReason: "Ağ zaman aşımı." }),
+    );
+
+    await machine.transitionTo(TX as never, "abc", "failed", "worker:broadcast", {
+      failureReason: "Ağ zaman aşımı.",
+      metadata: { step: "broadcast", reason: "BROADCAST_FAILED" },
+    });
+
+    expect(repository.updateState).toHaveBeenCalledWith(TX, "abc", "failed", {
+      failureReason: "Ağ zaman aşımı.",
+    });
+  });
+
+  it("broadcast (terminal olmayan) durumundan broadcast tekrar denenirse → TRANSFER_INVALID_TRANSITION (idempotency)", async () => {
+    repository.findByIdInTx.mockResolvedValue(
+      transferRow({ state: "broadcast" }),
+    );
+
+    await expect(
+      machine.transitionTo(TX as never, "abc", "broadcast", "worker:broadcast"),
+    ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
+    expect(repository.updateState).not.toHaveBeenCalled();
+  });
 });

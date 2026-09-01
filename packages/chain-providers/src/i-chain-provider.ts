@@ -90,7 +90,15 @@ export interface IChainProvider {
   signTransaction(privateKey: string, input: RawTransactionInput): Promise<string>;
 
   /**
-   * İmzalı ham işlemi zincire yayınlar ve tx hash'ini döner. Faz 5 §5.4 dolduracak.
+   * `signing` worker'ının ürettiği imzalı ham işlemi (`signTransaction` çıktısı —
+   * EVM: `0x`-önekli hex; Tron: `JSON.stringify` edilmiş imzalı işlem) zincire
+   * yayınlar ve mempool'a giren işlemin hash'ini döner — blok onayını **beklemez**
+   * (o Faz 5 §5.5 confirmation worker'ı). `broadcast` worker'ı çağırır
+   * (`docs/01_DOMAIN_MODEL.md` §5.2 `signed → broadcast`).
+   *
+   * Hata `ChainProviderUnavailableException`'a (`{ cause }` ile asıl RPC hatası
+   * korunur) sarılır; worker `cause`'u `classifyRpcError` ile kalıcı/geçici
+   * ayırır (`permanent → failed`, `transient → BullMQ retry`).
    */
   broadcastTransaction(signedTxHex: string): Promise<BroadcastResult>;
 

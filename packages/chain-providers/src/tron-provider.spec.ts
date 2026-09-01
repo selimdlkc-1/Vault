@@ -1,6 +1,6 @@
 import { TronWeb } from "tronweb";
 
-import { ChainIdNotAllowedException, NotImplementedException } from "./exceptions";
+import { ChainIdNotAllowedException } from "./exceptions";
 import { TronProvider } from "./tron-provider";
 
 // docs/08_TESTING_STRATEGY.md §5 — TronGrid'e gerçek istek atılmaz; `TronWeb`
@@ -94,11 +94,6 @@ describe("TronProvider", () => {
     });
   });
 
-  describe("broadcastTransaction (Faz 5 dolduracak)", () => {
-    it("NotImplementedException fırlatır", () => {
-      mockTronWeb({});
-      const provider = new TronProvider(SHASTA, ALLOWLIST);
-      expect(() => provider.broadcastTransaction()).toThrow(NotImplementedException);
-    });
-  });
+  // broadcastTransaction'ın davranış testleri `broadcast-transaction.spec.ts`'te
+  // (EVM + Tron + classifyRpcError bir arada).
 });

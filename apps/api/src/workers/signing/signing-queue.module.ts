@@ -3,6 +3,7 @@ import { Module } from "@nestjs/common";
 import { NetworksModule } from "../../networks/networks.module";
 import { TransfersModule } from "../../transfers/transfers.module";
 import { WalletsModule } from "../../wallets/wallets.module";
+import { BROADCAST_QUEUE } from "../broadcast/broadcast.queue";
 import { SigningProcessor } from "./signing.processor";
 import { SIGNING_QUEUE } from "./signing.queue";
 
@@ -20,10 +21,15 @@ import { SIGNING_QUEUE } from "./signing.queue";
  * `BullModule.forRoot` bağlantısı `AppModule`'de bir kez tanımlıdır. Kuyruğun
  * kendisi `TransfersModule`'de de `registerQueue` ile kayıtlıdır — `TransfersService`
  * `confirm()` sonunda job ekleyebilsin diye.
+ *
+ * `broadcast` kuyruğu (İterasyon 4 §5.4) burada `registerQueue` ile kayıtlıdır —
+ * `SigningProcessor` başarılı imzalamanın sonunda `broadcast` job'u ekler.
+ * Processor'ı ayrı `BroadcastQueueModule`'de yaşar.
  */
 @Module({
   imports: [
     BullModule.registerQueue({ name: SIGNING_QUEUE }),
+    BullModule.registerQueue({ name: BROADCAST_QUEUE }),
     TransfersModule,
     WalletsModule,
     NetworksModule,

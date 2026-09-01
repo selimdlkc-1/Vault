@@ -23,6 +23,10 @@ const ALLOWED_TRANSITIONS: ReadonlyMap<TransferState | null, readonly TransferSt
     // İterasyon 3 (§5.3): `signing` worker başarıda `signed`'e, imzalama
     // hatasında doğrudan `failed`'e geçirir (`docs/01_DOMAIN_MODEL.md` §5.2).
     ["pending_signature", ["signed", "failed"]],
+    // İterasyon 4 (§5.4): `broadcast` worker başarılı yayında `broadcast`'e
+    // (`tx_hash` aynı geçişte dolar), kalıcı RPC hatası / retry tükenmesinde
+    // `failed`'e geçirir (`docs/01_DOMAIN_MODEL.md` §5.2 `signed → broadcast`).
+    ["signed", ["broadcast", "failed"]],
   ]);
 
 /**
@@ -58,11 +62,14 @@ export class InvalidTransitionError extends Error {
  * `transitionTo()` opsiyonel yan-veri girdisi (İterasyon 3+). `failureReason`
  * yalnızca `failed` hedefinde `transfers.failure_reason`'a yazılır
  * (`docs/01_DOMAIN_MODEL.md` §5.2); `metadata` `transfer_state_events` satırına
- * eklenir (ör. worker'ın sadeleştirilmiş hata nedeni). İterasyon 4 `txHash` için
- * bu tipi genişletir.
+ * eklenir (ör. worker'ın sadeleştirilmiş hata nedeni); `txHash` yalnızca
+ * `signed → broadcast` geçişinde verilir ve `transfers.tx_hash`'e **aynı
+ * `$transaction` içinde** yazılır (`docs/02_DATABASE_SCHEMA.md` §2.7 — "`tx_hash`
+ * `broadcast` durumunda dolar", İterasyon 4 §5.4).
  */
 export interface TransitionOptions {
   failureReason?: string;
+  txHash?: string;
   metadata?: Prisma.InputJsonValue;
 }
 
@@ -164,12 +171,17 @@ export class TransferStateMachine {
       throw error;
     }
 
+    const extra: { failureReason?: string; txHash?: string } = {};
+    if (options?.failureReason !== undefined) {
+      extra.failureReason = options.failureReason;
+    }
+    if (options?.txHash !== undefined) {
+      extra.txHash = options.txHash;
+    }
     const updated =
-      options?.failureReason === undefined
+      Object.keys(extra).length === 0
         ? await this.repository.updateState(tx, transferId, toState)
-        : await this.repository.updateState(tx, transferId, toState, {
-            failureReason: options.failureReason,
-          });
+        : await this.repository.updateState(tx, transferId, toState, extra);
     await this.repository.insertStateEvent(tx, {
       transferId,
       fromState: current.state,

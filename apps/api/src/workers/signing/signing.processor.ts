@@ -1,6 +1,6 @@
-import { Processor, WorkerHost } from "@nestjs/bullmq";
+import { InjectQueue, Processor, WorkerHost } from "@nestjs/bullmq";
 import { Logger } from "@nestjs/common";
-import type { Job } from "bullmq";
+import type { Job, Queue } from "bullmq";
 import { ChainProviderFactory } from "../../networks/chain-provider.factory";
 import { PrismaService } from "../../prisma/prisma.service";
 import { TransferStateMachine } from "../../transfers/transfer-state-machine.service";
@@ -10,6 +10,11 @@ import {
 } from "../../transfers/transfers.service";
 import { EnvelopeEncryptionService } from "../../wallets/envelope-encryption.service";
 import { WalletsService } from "../../wallets/wallets.service";
+import {
+  BROADCAST_JOB,
+  BROADCAST_JOB_OPTS,
+  BROADCAST_QUEUE,
+} from "../broadcast/broadcast.queue";
 import { SIGN_JOB, SIGNING_QUEUE, type SignJobData } from "./signing.queue";
 
 /**
@@ -29,6 +34,10 @@ import { SIGN_JOB, SIGNING_QUEUE, type SignJobData } from "./signing.queue";
  * 3. `IChainProvider.signTransaction(privateKey, input)` ile ağa özel ham işlemi
  *    imzalar (ağa **göndermez** — broadcast Faz 5 §5.4).
  * 4. `TransferStateMachine.transitionTo(..., 'signed', 'worker:signing')`.
+ * 5. Geçiş commit olunca `broadcast` kuyruğuna `{ transferId, signedTx }` job'u
+ *    bırakır (job id `${transferId}:broadcast` — İterasyon 4 §5.4). Bu job,
+ *    `signing`'in aksine BullMQ `attempts: 5` + exponential backoff taşır
+ *    (`docs/mimari-kararlar.md` I-006 — broadcast RPC hatası geçici olabilir).
  *
  * **Güvenlik sınırı** (`.claude/rules/03-security-baseline.md` madde 1,
  * `docs/07_SECURITY_IMPLEMENTATION.md` §5): çözülmüş private key hiçbir zaman bir
@@ -53,6 +62,7 @@ export class SigningProcessor extends WorkerHost {
     private readonly envelope: EnvelopeEncryptionService,
     private readonly providers: ChainProviderFactory,
     private readonly prisma: PrismaService,
+    @InjectQueue(BROADCAST_QUEUE) private readonly broadcastQueue: Queue,
   ) {
     super();
   }
@@ -75,11 +85,7 @@ export class SigningProcessor extends WorkerHost {
     }
 
     try {
-      // İmzalı ham tx üretilir ama bu iterasyonda saklanmaz/kullanılmaz —
-      // İterasyon 4 (§5.4) başarılı imzalamanın sonuna `broadcast` kuyruğuna
-      // `{ transferId, signedTx }` job'u ekleyecek. Şimdilik imzalamanın
-      // gerçekten çalıştığını doğrular ve `signed` geçişini tetikler.
-      await this.sign(context);
+      const signedTx = await this.sign(context);
       await this.prisma.$transaction((tx) =>
         this.stateMachine.transitionTo(
           tx,
@@ -88,7 +94,18 @@ export class SigningProcessor extends WorkerHost {
           "worker:signing",
         ),
       );
-      this.logger.debug(`Transfer ${transferId} imzalandı → signed`);
+      // Geçiş commit oldu → `broadcast` kuyruğuna iş bırak. Job id
+      // `${transferId}:broadcast` bileşik anahtarı (`docs/mimari-kararlar.md`
+      // I-005) — restart sonrası tekrar imzalama denenirse bile ikinci broadcast
+      // job'u BullMQ deduplication ile yok sayılır.
+      await this.broadcastQueue.add(
+        BROADCAST_JOB,
+        { transferId, signedTx },
+        { jobId: `${transferId}:broadcast`, ...BROADCAST_JOB_OPTS },
+      );
+      this.logger.debug(
+        `Transfer ${transferId} imzalandı → signed, broadcast kuyruğuna alındı`,
+      );
     } catch (error) {
       // İmzalama hatası → doğrudan `failed` (BullMQ retry YOK,
       // `docs/01_DOMAIN_MODEL.md` §5.2). Ham hata yalnızca log'a; state event

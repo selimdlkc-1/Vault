@@ -1,7 +1,7 @@
 import { Contract, JsonRpcProvider } from "ethers";
 
 import { EvmProvider } from "./evm-provider";
-import { ChainIdNotAllowedException, NotImplementedException } from "./exceptions";
+import { ChainIdNotAllowedException } from "./exceptions";
 
 // docs/08_TESTING_STRATEGY.md §5 / .claude/rules/30-testing.md — chain provider
 // testleri gerçek RPC'ye karşı çalışmaz. `JsonRpcProvider` ve `Contract` sabit
@@ -94,11 +94,6 @@ describe("EvmProvider", () => {
     });
   });
 
-  describe("broadcastTransaction (Faz 5 dolduracak)", () => {
-    it("NotImplementedException fırlatır", () => {
-      jsonRpcProviderMock.mockImplementation(() => ({}));
-      const provider = new EvmProvider(SEPOLIA, ALLOWLIST);
-      expect(() => provider.broadcastTransaction()).toThrow(NotImplementedException);
-    });
-  });
+  // broadcastTransaction'ın davranış testleri `broadcast-transaction.spec.ts`'te
+  // (EVM + Tron + classifyRpcError bir arada).
 });

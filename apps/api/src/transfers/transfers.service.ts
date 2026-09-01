@@ -74,6 +74,18 @@ export interface SigningContext {
 }
 
 /**
+ * `broadcast` worker'ının (Faz 5 §5.4) imzalı işlemi hangi ağa yayınlayacağını
+ * seçmesi için gereken minimum bağlam. `state !== 'signed'` ise
+ * `getBroadcastContext` `null` döner (worker sessizce çıkar — idempotency,
+ * `docs/04_BACKEND_SPEC.md` §8: restart sonrası tekrar kuyruğa alınan job veya
+ * zaten `broadcast`/terminal durumdaki transfer).
+ */
+export interface BroadcastContext {
+  transferId: string;
+  chain: { chainType: ChainType; chainId: string };
+}
+
+/**
  * Transfer iş mantığı (`.claude/rules/10` service katmanı). Bu iterasyonda
  * yalnızca draft oluşturma yolu var: sahiplik + managed tip kontrolü
  * (`WalletsService`), istemci-tarafı idempotency, ve `TransferStateMachine.enter()`.
@@ -286,7 +298,8 @@ export class TransfersService {
    * dönmez (`WalletsService.getSigningMaterial`).
    */
   async getSigningContext(transferId: string): Promise<SigningContext | null> {
-    const transfer = await this.repository.findByIdForSigning(transferId);
+    const transfer =
+      await this.repository.findByIdWithChainContext(transferId);
     if (!transfer || transfer.state !== "pending_signature") {
       return null;
     }
@@ -302,6 +315,30 @@ export class TransfersService {
       asset: {
         contractAddress: transfer.asset.contractAddress,
         decimals: transfer.asset.decimals,
+      },
+    };
+  }
+
+  /**
+   * `broadcast` worker'ı (Faz 5 §5.4) için ağ bağlamı. Transfer yok **veya**
+   * `state !== 'signed'` ise `null` — worker bunu "zaten yayınlanmış / terminal"
+   * olarak yorumlar ve hiçbir yan etki üretmeden çıkar
+   * (`docs/04_BACKEND_SPEC.md` §8 idempotency). İmzalı ham işlem job payload'ında
+   * taşınır, burada dönmez.
+   */
+  async getBroadcastContext(
+    transferId: string,
+  ): Promise<BroadcastContext | null> {
+    const transfer =
+      await this.repository.findByIdWithChainContext(transferId);
+    if (!transfer || transfer.state !== "signed") {
+      return null;
+    }
+    return {
+      transferId: transfer.id,
+      chain: {
+        chainType: transfer.network.chainType,
+        chainId: transfer.network.chainId,
       },
     };
   }

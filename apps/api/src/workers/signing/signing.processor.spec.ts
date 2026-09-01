@@ -40,6 +40,7 @@ describe("SigningProcessor", () => {
   let providers: jest.Mocked<Pick<ChainProviderFactory, "getProvider">>;
   let provider: jest.Mocked<Pick<IChainProvider, "signTransaction">>;
   let prisma: { $transaction: jest.Mock };
+  let broadcastQueue: { add: jest.Mock };
   let processor: SigningProcessor;
 
   beforeEach(() => {
@@ -64,6 +65,7 @@ describe("SigningProcessor", () => {
     prisma = {
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(TX)),
     };
+    broadcastQueue = { add: jest.fn().mockResolvedValue(undefined) };
     processor = new SigningProcessor(
       transfers as unknown as TransfersService,
       stateMachine as unknown as TransferStateMachine,
@@ -71,6 +73,7 @@ describe("SigningProcessor", () => {
       envelope as unknown as EnvelopeEncryptionService,
       providers as unknown as ChainProviderFactory,
       prisma as unknown as PrismaService,
+      broadcastQueue as never,
     );
   });
 
@@ -94,6 +97,28 @@ describe("SigningProcessor", () => {
       "signed",
       "worker:signing",
     );
+  });
+
+  it("başarı: signed geçişinden sonra broadcast kuyruğuna {transferId, signedTx} eklenir (jobId + attempts:5 + exponential backoff)", async () => {
+    await processor.process(job());
+
+    expect(broadcastQueue.add).toHaveBeenCalledWith(
+      "broadcast",
+      { transferId: TRANSFER_ID, signedTx: "0xSIGNEDRAWTX" },
+      {
+        jobId: `${TRANSFER_ID}:broadcast`,
+        attempts: 5,
+        backoff: { type: "exponential", delay: 1000 },
+      },
+    );
+  });
+
+  it("imzalama hatası: broadcast kuyruğuna hiçbir şey eklenmez", async () => {
+    provider.signTransaction.mockRejectedValue(new Error("bad key"));
+
+    await processor.process(job());
+
+    expect(broadcastQueue.add).not.toHaveBeenCalled();
   });
 
   it("imzalama hatası: BullMQ retry değil — doğrudan failed (failureReason + metadata)", async () => {
@@ -150,6 +175,7 @@ describe("SigningProcessor", () => {
     expect(provider.signTransaction).not.toHaveBeenCalled();
     expect(stateMachine.transitionTo).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(broadcastQueue.add).not.toHaveBeenCalled();
   });
 
   it("bilinmeyen job adı: sessizce çıkar", async () => {
