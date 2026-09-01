@@ -114,9 +114,30 @@ class InMemoryTransfersRepository {
   // --- İterasyon 2: confirm() yolu ---
   readonly owners = new Map<string, string>();
 
+  // --- İterasyon 7 (§5.6b): getById() denetim izi + deleteDraft() ---
+  readonly stateEventRows: {
+    id: string;
+    transferId: string;
+    fromState: Transfer["state"] | null;
+    toState: Transfer["state"];
+    occurredAt: Date;
+    actor: string;
+    metadata: unknown;
+  }[] = [];
+
   seed(row: Transfer, ownerId: string): void {
     this.rows.push(row);
     this.owners.set(row.id, ownerId);
+    // Her transfer en az `null → draft` denetim izi kaydıyla doğar.
+    this.stateEventRows.push({
+      id: randomUUID(),
+      transferId: row.id,
+      fromState: null,
+      toState: "draft",
+      occurredAt: new Date(),
+      actor: "user",
+      metadata: null,
+    });
   }
 
   findByIdWithOwner(
@@ -128,6 +149,38 @@ class InMemoryTransfersRepository {
       ...row,
       wallet: { userId: this.owners.get(row.id) ?? "" },
     });
+  }
+
+  findByIdWithOwnerAndEvents(transferId: string): Promise<
+    | (Transfer & {
+        wallet: { userId: string };
+        stateEvents: unknown[];
+      })
+    | null
+  > {
+    const row = this.rows.find((r) => r.id === transferId);
+    if (!row) return Promise.resolve(null);
+    return Promise.resolve({
+      ...row,
+      wallet: { userId: this.owners.get(row.id) ?? "" },
+      stateEvents: this.stateEventRows
+        .filter((e) => e.transferId === transferId)
+        .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime()),
+    });
+  }
+
+  deleteDraftCascade(
+    tx: Prisma.TransactionClient,
+    transferId: string,
+  ): Promise<void> {
+    for (let i = this.stateEventRows.length - 1; i >= 0; i -= 1) {
+      if (this.stateEventRows[i].transferId === transferId) {
+        this.stateEventRows.splice(i, 1);
+      }
+    }
+    const idx = this.rows.findIndex((r) => r.id === transferId);
+    if (idx >= 0) this.rows.splice(idx, 1);
+    return Promise.resolve();
   }
 
   findByIdInTx(
@@ -503,6 +556,178 @@ describe("TransfersController (integration) — POST /api/v1/transfers/:id/confi
       .post(`/api/v1/transfers/${DRAFT_ID}/confirm`)
       .send({ currentPassword: "correct-horse" });
 
+    expect(res.status).toBe(401);
+  });
+});
+
+/**
+ * `GET /api/v1/transfers/:id` + `DELETE /api/v1/transfers/:id` HTTP akışı
+ * (`docs/03_API_CONTRACTS.md` §5.4) — İterasyon 7 (§5.6b). Sahiplik + Admin
+ * salt-okunur (GET) / Admin muaf değil (DELETE); `draft` dışı silme reddi.
+ */
+describe("TransfersController (integration) — GET + DELETE /api/v1/transfers/:id", () => {
+  let app: INestApplication;
+  let jwt: JwtService;
+  let repo: InMemoryTransfersRepository;
+
+  const ADMIN_ID = "abababab-abab-4bab-8bab-abababababab";
+  const TARGET_ID = "f2222222-2222-4222-8222-222222222222";
+
+  function transferRow(overrides: Partial<Transfer> = {}): Transfer {
+    const now = new Date();
+    return {
+      id: TARGET_ID,
+      walletId: MANAGED_WALLET_ID,
+      networkId: NETWORK_ID,
+      assetId: ASSET_ID,
+      toAddress: "0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045",
+      amount: "1000",
+      state: "draft",
+      txHash: null,
+      failureReason: null,
+      idempotencyKey: randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      ...overrides,
+    };
+  }
+
+  beforeEach(async () => {
+    const moduleRef = await Test.createTestingModule({
+      imports: [testConfigModule(), TestingPrismaModule, AuthModule],
+      controllers: [TransfersController],
+      providers: [
+        TransfersService,
+        TransferStateMachine,
+        TransfersThrottlerGuard,
+        { provide: TransfersRepository, useClass: InMemoryTransfersRepository },
+        { provide: WalletsService, useValue: {} },
+        { provide: NetworksService, useValue: {} },
+        { provide: AuditService, useValue: { record: jest.fn() } },
+        signingQueueProvider,
+        { provide: APP_GUARD, useClass: JwtAuthGuard },
+        { provide: APP_GUARD, useClass: RolesGuard },
+      ],
+    })
+      .overrideProvider(AuthService)
+      .useValue({ verifyPassword: jest.fn() })
+      .overrideProvider(UsersRepository)
+      .useValue({})
+      .overrideProvider(RefreshTokensRepository)
+      .useValue({})
+      .compile();
+
+    app = moduleRef.createNestApplication();
+    app.setGlobalPrefix("api/v1");
+    app.useGlobalInterceptors(new ResponseEnvelopeInterceptor());
+    app.useGlobalFilters(new AllExceptionsFilter());
+    await app.init();
+
+    jwt = app.get(JwtService);
+    repo = app.get(TransfersRepository);
+  });
+
+  afterEach(async () => {
+    await app.close();
+  });
+
+  const userToken = (sub = USER_ID) => jwt.sign({ sub, role: "user" });
+  const adminToken = () => jwt.sign({ sub: ADMIN_ID, role: "admin" });
+
+  it("GET — sahibi: transfer detay + denetim izi döner", async () => {
+    repo.seed(transferRow(), USER_ID);
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/transfers/${TARGET_ID}`)
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ id: TARGET_ID, state: "draft" });
+    expect(res.body.data.stateEvents).toEqual([
+      { fromState: null, toState: "draft", actor: "user", occurredAt: expect.any(String), metadata: null },
+    ]);
+    expect(res.body.data).not.toHaveProperty("idempotencyKey");
+  });
+
+  it("GET — Admin başkasının transfer'ini görebilir (salt-okunur)", async () => {
+    repo.seed(transferRow(), USER_ID);
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/transfers/${TARGET_ID}`)
+      .set("Authorization", `Bearer ${adminToken()}`);
+
+    expect(res.status).toBe(200);
+  });
+
+  it("GET — başkasının transfer'i + User → 403 FORBIDDEN_NOT_OWNER", async () => {
+    repo.seed(transferRow(), "99999999-9999-4999-8999-999999999999");
+
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/transfers/${TARGET_ID}`)
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN_NOT_OWNER");
+  });
+
+  it("GET — kayıt yok → 404 RESOURCE_NOT_FOUND", async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/api/v1/transfers/${TARGET_ID}`)
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("RESOURCE_NOT_FOUND");
+  });
+
+  it("GET — biçimsiz :id → 404 RESOURCE_NOT_FOUND", async () => {
+    const res = await request(app.getHttpServer())
+      .get("/api/v1/transfers/not-a-uuid")
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe("RESOURCE_NOT_FOUND");
+  });
+
+  it("DELETE — sahibinin draft'ı → 204, transfer + denetim izi silinir", async () => {
+    repo.seed(transferRow(), USER_ID);
+
+    const res = await request(app.getHttpServer())
+      .delete(`/api/v1/transfers/${TARGET_ID}`)
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(204);
+    expect(repo.rows).toHaveLength(0);
+    expect(repo.stateEventRows).toHaveLength(0);
+  });
+
+  it("DELETE — draft değil (signed) → 409 TRANSFER_INVALID_TRANSITION, silinmez", async () => {
+    repo.seed(transferRow({ state: "signed" }), USER_ID);
+
+    const res = await request(app.getHttpServer())
+      .delete(`/api/v1/transfers/${TARGET_ID}`)
+      .set("Authorization", `Bearer ${userToken()}`);
+
+    expect(res.status).toBe(409);
+    expect(res.body.error.code).toBe("TRANSFER_INVALID_TRANSITION");
+    expect(repo.rows).toHaveLength(1);
+  });
+
+  it("DELETE — Admin başkasının draft'ını silemez → 403 FORBIDDEN_NOT_OWNER", async () => {
+    repo.seed(transferRow(), USER_ID);
+
+    const res = await request(app.getHttpServer())
+      .delete(`/api/v1/transfers/${TARGET_ID}`)
+      .set("Authorization", `Bearer ${adminToken()}`);
+
+    expect(res.status).toBe(403);
+    expect(res.body.error.code).toBe("FORBIDDEN_NOT_OWNER");
+    expect(repo.rows).toHaveLength(1);
+  });
+
+  it("DELETE — token yoksa → 401", async () => {
+    const res = await request(app.getHttpServer()).delete(
+      `/api/v1/transfers/${TARGET_ID}`,
+    );
     expect(res.status).toBe(401);
   });
 });

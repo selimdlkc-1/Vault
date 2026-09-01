@@ -32,6 +32,12 @@ export const adminUserKeys = {
   search: (email: string) => [...adminUserKeys.all, "search", email] as const,
 };
 
+/** Transfer sorguları (`GET /transfers/:id`). */
+export const transferKeys = {
+  all: ["transfers"] as const,
+  detail: (id: string) => [...transferKeys.all, "detail", id] as const,
+};
+
 /** Hareket geçmişi sorguları (`GET /movements`). */
 export const movementKeys = {
   all: ["movements"] as const,

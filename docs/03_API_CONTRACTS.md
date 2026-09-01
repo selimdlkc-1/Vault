@@ -226,15 +226,16 @@ Error code formatı: `<DOMAIN>_<REASON>`, tamamı `UPPER_SNAKE_CASE`. Her kod te
 - *Audit event:* Yok
 
 **`GET /api/v1/transfers/:id`**
-- *Yetki:* `User` (sahiplik), `Admin` (salt-okunur)
-- *Response:* `200` — transfer detay + tam `transferStateEvents` listesi (denetim izi)
-- *Hata kodları:* `RESOURCE_NOT_FOUND`, `FORBIDDEN_NOT_OWNER`
+- *Yetki:* `User` (sahiplik), `Admin` (salt-okunur, sahiplik kontrolünden muaf)
+- *Response:* `200` — `{ id, walletId, networkId, assetId, toAddress, amount, state, txHash, failureReason, createdAt, updatedAt, stateEvents: [{ fromState, toState, actor, occurredAt, metadata }] }`. `stateEvents` tam denetim izidir, `occurredAt`'e göre artan sıralı; `idempotencyKey` dışarı sızdırılmaz.
+- *Hata kodları:* `RESOURCE_NOT_FOUND` (kayıt yok / biçimsiz `:id`), `FORBIDDEN_NOT_OWNER` (başkasının kaydı, istek `User`)
 - *Audit event:* Yok
 
 **`DELETE /api/v1/transfers/:id`**
-- *Yetki:* `User` (sahiplik; yalnızca `draft` durumundaki kendi transferi)
+- *Yetki:* `User` (sahiplik; yalnızca `draft` durumundaki kendi transferi — `Admin` bu mutasyondan muaf **değildir**)
 - *Response:* `204`
-- *Hata kodları:* `TRANSFER_ALREADY_TERMINAL` yerine burada spesifik olarak `409 TRANSFER_INVALID_TRANSITION` döner (yalnızca `draft` silinebilir, diğer terminal-olmayan durumlarda iptal yoktur), `FORBIDDEN_NOT_OWNER`
+- *Hata kodları:* `TRANSFER_ALREADY_TERMINAL` yerine burada spesifik olarak `409 TRANSFER_INVALID_TRANSITION` döner (yalnızca `draft` silinebilir, diğer terminal-olmayan durumlarda iptal yoktur), `FORBIDDEN_NOT_OWNER` (kayıt yok / başkasının — `RESOURCE_NOT_FOUND` sızdırılmaz)
+- *Data:* Taslağın tek `null → draft` `transfer_state_events` kaydı, taslakla birlikte tek transaction'da silinir (`docs/02_DATABASE_SCHEMA.md` §2.8 istisnası, `docs/mimari-kararlar.md` W-005)
 - *Audit event:* Yok
 
 ### 5.5 Movements / History
@@ -316,7 +317,7 @@ NestJS `@nestjs/throttler` kullanılır; eşikler config'den okunur.
 | --- | --- | --- |
 | `POST /auth/login` | 5 istek / 15 dakika | `IP + email` bileşik anahtarı (brute-force koruması) |
 | `POST /auth/register` | 3 istek / saat | `IP` |
-| `POST /transfers`, `POST /transfers/:id/confirm` | 10 istek / dakika | `userId` |
+| `POST /transfers`, `POST /transfers/:id/confirm`, `DELETE /transfers/:id` | 10 istek / dakika | `userId` |
 | `POST /admin/mint` | 20 istek / dakika | `adminId` |
 | Diğer tüm authenticated endpoint'ler | 100 istek / dakika | `userId` |
 

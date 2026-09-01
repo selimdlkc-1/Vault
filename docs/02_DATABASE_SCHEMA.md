@@ -130,7 +130,7 @@ Constraint: `(wallet_id, asset_id)` bileşik `PRIMARY KEY`.
 
 ### 2.8 `transfer_state_events`
 
-Append-only; hiçbir satır güncellenmez veya silinmez.
+Append-only; hiçbir satır güncellenmez veya silinmez. **Tek istisna:** bir transfer `draft` durumundayken kullanıcı tarafından iptal edilirse (`DELETE /transfers/:id`, [`mimari-kararlar.md` W-005](mimari-kararlar.md#6-süreç-workflow-mimarisi)), o taslağın tek `null → draft` kaydı taslağın kendisiyle **birlikte** aynı transaction'da silinir. FK `RESTRICT` (bkz. §7) denetim izinin transferden *bağımsız* silinmesini engeller; `draft`'ı geçmiş (bir worker'ın veya `confirm`'ün dokunduğu) hiçbir transferin izi silinemez.
 
 | Kolon | Tip | Null | Default | Açıklama |
 | --- | --- | --- | --- | --- |

@@ -86,7 +86,17 @@ export default function TransferNewPage() {
 }
 
 function TransferNewContent() {
-  const walletIdParam = useSearchParams().get("walletId");
+  const searchParams = useSearchParams();
+  const walletIdParam = searchParams.get("walletId");
+  // S-TRANSFER-DETAIL "Yeniden Dene" (dropped) aynı parametrelerle önceden
+  // doldurulmuş yeni bir taslak açar (`docs/06` S-TRANSFER-DETAIL, Faz 5 §5.6b).
+  // `amount` düz ondalık string olarak gelir (detay ekranı varlığın decimals'ıyla
+  // çevirir), form doğrudan kullanır.
+  const prefill = {
+    assetId: searchParams.get("assetId"),
+    toAddress: searchParams.get("toAddress"),
+    amount: searchParams.get("amount"),
+  };
   const wallets = useWallets({ type: "managed" });
 
   if (wallets.isPending) {
@@ -125,16 +135,28 @@ function TransferNewContent() {
   }
 
   return (
-    <TransferForm wallets={wallets.data} initialWalletId={walletIdParam} />
+    <TransferForm
+      wallets={wallets.data}
+      initialWalletId={walletIdParam}
+      initialAssetId={prefill.assetId}
+      initialToAddress={prefill.toAddress}
+      initialAmount={prefill.amount}
+    />
   );
 }
 
 function TransferForm({
   wallets,
   initialWalletId,
+  initialAssetId,
+  initialToAddress,
+  initialAmount,
 }: {
   wallets: WalletListItem[];
   initialWalletId: string | null;
+  initialAssetId: string | null;
+  initialToAddress: string | null;
+  initialAmount: string | null;
 }) {
   const router = useRouter();
   const networks = useNetworks();
@@ -145,9 +167,11 @@ function TransferForm({
     : "";
 
   const [walletId, setWalletId] = useState(initialWallet);
-  const [assetId, setAssetId] = useState("");
-  const [toAddress, setToAddress] = useState("");
-  const [amountInput, setAmountInput] = useState("");
+  // `assetId` ön-doldurması yalnızca bir cüzdan seçiliyken anlamlı — `AssetField`
+  // mount olunca seçili değeri seçenek listesiyle doğrular.
+  const [assetId, setAssetId] = useState(initialWallet ? (initialAssetId ?? "") : "");
+  const [toAddress, setToAddress] = useState(initialToAddress ?? "");
+  const [amountInput, setAmountInput] = useState(initialAmount ?? "");
   const [assetOptions, setAssetOptions] = useState<NetworkAsset[]>([]);
   const [errors, setErrors] = useState<FieldErrors>({});
   const [banner, setBanner] = useState<string | null>(null);

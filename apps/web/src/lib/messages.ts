@@ -150,6 +150,47 @@ export const messages = {
     errorCrossNetwork: "Hedef adres, seçili cüzdanın ağıyla uyuşmuyor.",
     errorAssetInactive: "Bu varlık şu anda transfer için kullanılamıyor.",
   },
+  transferConfirm: {
+    // TR metinler docs/06_SCREEN_CATALOG.md S-TRANSFER-CONFIRM'den birebir.
+    title: "Transferi Onayla",
+    summaryTitle: "Transfer Özeti",
+    walletLabel: "Gönderen Cüzdan",
+    toAddressLabel: "Hedef Adres",
+    assetLabel: "Varlık",
+    amountLabel: "Tutar",
+    passwordLabel: "Mevcut Şifre",
+    submit: "Onayla ve Gönder",
+    submitting: "Onaylanıyor...",
+    cancel: "İptal Et",
+    cancelling: "İptal ediliyor...",
+    passwordRequired: "Şifrenizi girin.",
+    // Başarı toast'ı — rota değişse de görünür (S-TRANSFER-DETAIL'e geçiş).
+    successToast: "Transferiniz onaylandı, işleniyor.",
+    // Backend hata kodu → mesaj (docs/06 S-TRANSFER-CONFIRM "Hata").
+    errorStepUp: "Şifreniz hatalı.",
+    errorInsufficientBalance: "Bakiyeniz bu işlem için yetersiz.",
+    errorInvalidTransition: "Bu transfer artık onaylanamaz.",
+    loadError: "Transfer bilgisi yüklenemedi.",
+  },
+  transferDetail: {
+    // TR metinler docs/06_SCREEN_CATALOG.md S-TRANSFER-DETAIL'den birebir.
+    title: "Transfer Detayı",
+    statusLabel: "Durum",
+    toAddressLabel: "Hedef Adres",
+    amountLabel: "Tutar",
+    txHashLabel: "İşlem Hash'i",
+    failureReasonLabel: "Başarısızlık Nedeni",
+    timelineTitle: "Durum Geçmişi",
+    backToMovements: "Hareketlere Dön",
+    retry: "Yeniden Dene",
+    loadError: "Transfer bilgisi yüklenemedi.",
+    // Denetim izi aktör etiketleri.
+    actorUser: "Kullanıcı",
+    actorSystem: "Sistem",
+    actorWorkerSigning: "İmzalama servisi",
+    actorWorkerBroadcast: "Yayın servisi",
+    actorWorkerConfirmation: "Onay servisi",
+  },
   movements: {
     // TR metinler docs/06_SCREEN_CATALOG.md §4.3 S-MOVEMENTS'ten birebir.
     title: "Hareketler",
@@ -254,5 +295,10 @@ export const messages = {
     CHAIN_PROVIDER_UNAVAILABLE:
       "Zincir sağlayıcıya şu anda ulaşılamıyor, lütfen tekrar deneyin.",
     RESOURCE_NOT_FOUND: "Seçilen cüzdan veya varlık bulunamadı.",
+    // S-TRANSFER-CONFIRM / S-TRANSFER-DETAIL hata eşlemesi (docs/06).
+    AUTH_STEP_UP_REQUIRED: "Şifreniz hatalı.",
+    WALLET_INSUFFICIENT_BALANCE: "Bakiyeniz bu işlem için yetersiz.",
+    TRANSFER_INVALID_TRANSITION: "Bu transfer artık onaylanamaz.",
+    FORBIDDEN_NOT_OWNER: "Bu kayıt size ait değil.",
   } as Record<string, string>,
 } as const;

@@ -512,3 +512,169 @@ describe("TransfersService.getBroadcastContext (§5.4 — broadcast worker)", ()
     await expect(service.getBroadcastContext(TRANSFER_ID)).resolves.toBeNull();
   });
 });
+
+describe("TransfersService.getById (§5.6b — GET /transfers/:id)", () => {
+  let repository: jest.Mocked<
+    Pick<TransfersRepository, "findByIdWithOwnerAndEvents">
+  >;
+  let service: TransfersService;
+
+  function withEvents(overrides: Partial<Transfer> = {}, ownerId = USER_ID) {
+    return {
+      ...transferWithOwner(overrides, ownerId),
+      stateEvents: [
+        {
+          id: "e1",
+          transferId: TRANSFER_ID,
+          fromState: null,
+          toState: "draft" as const,
+          occurredAt: new Date("2026-08-31T00:00:00.000Z"),
+          actor: "user",
+          metadata: null,
+        },
+        {
+          id: "e2",
+          transferId: TRANSFER_ID,
+          fromState: "draft" as const,
+          toState: "pending_signature" as const,
+          occurredAt: new Date("2026-08-31T00:01:00.000Z"),
+          actor: "user",
+          metadata: { note: "x" },
+        },
+      ],
+    };
+  }
+
+  beforeEach(() => {
+    repository = {
+      findByIdWithOwnerAndEvents: jest.fn().mockResolvedValue(withEvents()),
+    };
+    service = new TransfersService(
+      repository as unknown as TransfersRepository,
+      {} as unknown as TransferStateMachine,
+      {} as unknown as PrismaService,
+      {} as unknown as WalletsService,
+      {} as unknown as AuthService,
+      {} as unknown as NetworksService,
+      {} as unknown as AuditService,
+      { add: jest.fn() } as never,
+    );
+  });
+
+  it("sahibi: transfer görünümü + zaman sıralı denetim izi döner", async () => {
+    const result = await service.getById(USER_ID, "user", TRANSFER_ID);
+    expect(result).toMatchObject({ id: TRANSFER_ID, state: "draft" });
+    expect(result.stateEvents).toEqual([
+      {
+        fromState: null,
+        toState: "draft",
+        actor: "user",
+        occurredAt: "2026-08-31T00:00:00.000Z",
+        metadata: null,
+      },
+      {
+        fromState: "draft",
+        toState: "pending_signature",
+        actor: "user",
+        occurredAt: "2026-08-31T00:01:00.000Z",
+        metadata: { note: "x" },
+      },
+    ]);
+    expect(result).not.toHaveProperty("idempotencyKey");
+  });
+
+  it("Admin: başkasının transfer'ini salt-okunur görebilir", async () => {
+    repository.findByIdWithOwnerAndEvents.mockResolvedValue(
+      withEvents({}, OTHER_USER_ID),
+    );
+    await expect(
+      service.getById(USER_ID, "admin", TRANSFER_ID),
+    ).resolves.toMatchObject({ id: TRANSFER_ID });
+  });
+
+  it("başkasının transfer'i + User rolü → FORBIDDEN_NOT_OWNER", async () => {
+    repository.findByIdWithOwnerAndEvents.mockResolvedValue(
+      withEvents({}, OTHER_USER_ID),
+    );
+    await expect(
+      service.getById(USER_ID, "user", TRANSFER_ID),
+    ).rejects.toBeInstanceOf(ForbiddenNotOwnerException);
+  });
+
+  it("kayıt yok → RESOURCE_NOT_FOUND (GET, 'yok' ile 'başkasının' ayrılır)", async () => {
+    repository.findByIdWithOwnerAndEvents.mockResolvedValue(null);
+    await expect(
+      service.getById(USER_ID, "user", TRANSFER_ID),
+    ).rejects.toMatchObject({ code: "RESOURCE_NOT_FOUND" });
+  });
+});
+
+describe("TransfersService.deleteDraft (§5.6b — DELETE /transfers/:id)", () => {
+  let repository: jest.Mocked<
+    Pick<TransfersRepository, "findByIdWithOwner" | "deleteDraftCascade">
+  >;
+  let prisma: { $transaction: jest.Mock };
+  let service: TransfersService;
+  const TX = { __tx: true };
+
+  beforeEach(() => {
+    repository = {
+      findByIdWithOwner: jest.fn().mockResolvedValue(transferWithOwner()),
+      deleteDraftCascade: jest.fn().mockResolvedValue(undefined),
+    };
+    prisma = {
+      $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(TX)),
+    };
+    service = new TransfersService(
+      repository as unknown as TransfersRepository,
+      {} as unknown as TransferStateMachine,
+      prisma as unknown as PrismaService,
+      {} as unknown as WalletsService,
+      {} as unknown as AuthService,
+      {} as unknown as NetworksService,
+      {} as unknown as AuditService,
+      { add: jest.fn() } as never,
+    );
+  });
+
+  it("sahibinin draft'ı → denetim izi + transfer tek $transaction'da silinir", async () => {
+    await service.deleteDraft(USER_ID, TRANSFER_ID);
+    expect(repository.deleteDraftCascade).toHaveBeenCalledWith(TX, TRANSFER_ID);
+  });
+
+  it("terminal-olmayan ama draft değil (pending_signature) → TRANSFER_INVALID_TRANSITION, silme yok", async () => {
+    repository.findByIdWithOwner.mockResolvedValue(
+      transferWithOwner({ state: "pending_signature" }),
+    );
+    await expect(
+      service.deleteDraft(USER_ID, TRANSFER_ID),
+    ).rejects.toBeInstanceOf(TransferInvalidTransitionException);
+    expect(repository.deleteDraftCascade).not.toHaveBeenCalled();
+  });
+
+  it("terminal durum (confirmed) → TRANSFER_INVALID_TRANSITION", async () => {
+    repository.findByIdWithOwner.mockResolvedValue(
+      transferWithOwner({ state: "confirmed" }),
+    );
+    await expect(
+      service.deleteDraft(USER_ID, TRANSFER_ID),
+    ).rejects.toBeInstanceOf(TransferInvalidTransitionException);
+  });
+
+  it("başkasının transfer'i → FORBIDDEN_NOT_OWNER (Admin dahil muaf değil)", async () => {
+    repository.findByIdWithOwner.mockResolvedValue(
+      transferWithOwner({}, OTHER_USER_ID),
+    );
+    await expect(
+      service.deleteDraft(USER_ID, TRANSFER_ID),
+    ).rejects.toBeInstanceOf(ForbiddenNotOwnerException);
+    expect(repository.deleteDraftCascade).not.toHaveBeenCalled();
+  });
+
+  it("kayıt yok → FORBIDDEN_NOT_OWNER (DELETE hata listesi RESOURCE_NOT_FOUND içermez)", async () => {
+    repository.findByIdWithOwner.mockResolvedValue(null);
+    await expect(
+      service.deleteDraft(USER_ID, TRANSFER_ID),
+    ).rejects.toBeInstanceOf(ForbiddenNotOwnerException);
+  });
+});

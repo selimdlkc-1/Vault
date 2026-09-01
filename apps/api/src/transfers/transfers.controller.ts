@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  Delete,
+  Get,
   Headers,
   HttpCode,
   Param,
@@ -23,9 +25,11 @@ import {
   ValidationFailedException,
 } from "../common/exceptions/domain.exception";
 import { ZodValidationPipe } from "../common/pipes/zod-validation.pipe";
+import type { AuthenticatedUser } from "../common/types/authenticated-user";
 import {
   TransfersService,
   type ConfirmTransferResult,
+  type TransferDetailView,
   type TransferView,
 } from "./transfers.service";
 import { TransfersThrottlerGuard } from "./transfers-throttler.guard";
@@ -42,8 +46,9 @@ const TRANSFER_RATE_LIMIT = { limit: 10, ttl: 60_000 } as const;
  * katmanındadır (`TransfersService.createDraft` → `WalletsService`).
  *
  * İterasyon 2: `POST /transfers/:id/confirm` (step-up + guard'lar +
- * `draft → pending_signature`). `GET /transfers` + `GET /transfers/:id` +
- * `DELETE` (sonraki iterasyonlar) henüz yok.
+ * `draft → pending_signature`). İterasyon 7 (§5.6b): `GET /transfers/:id`
+ * (detay + denetim izi, Admin salt-okunur) + `DELETE /transfers/:id` (yalnızca
+ * sahibinin `draft`'ı). Liste ucu `GET /transfers` Faz 6 §6.4'te eklenir.
  */
 @Controller("transfers")
 export class TransfersController {
@@ -108,5 +113,53 @@ export class TransfersController {
     body: ConfirmTransferInput,
   ): Promise<ConfirmTransferResult> {
     return this.transfersService.confirm(userId, transferId, body.currentPassword);
+  }
+
+  /**
+   * `GET /transfers/:id` — transfer detay + tam `transfer_state_events` denetim
+   * izi (`docs/03_API_CONTRACTS.md` §5.4). `User` yalnızca kendi transfer'ini,
+   * `Admin` herhangi birini salt-okunur görür (sahiplik kontrolü servis
+   * katmanında). Biçimsiz `:id` → `404 RESOURCE_NOT_FOUND` (`docs/03` §3).
+   * S-TRANSFER-DETAIL bu ucu terminal-olmayan durumda 5 sn'de bir çeker.
+   */
+  @Get(":id")
+  getById(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param(
+      "id",
+      new ParseUUIDPipe({
+        exceptionFactory: () =>
+          new ResourceNotFoundException("Transfer bulunamadı."),
+      }),
+    )
+    transferId: string,
+  ): Promise<TransferDetailView> {
+    return this.transfersService.getById(user.id, user.role, transferId);
+  }
+
+  /**
+   * `DELETE /transfers/:id` — yalnızca sahibinin `draft` durumundaki transfer'i
+   * silinir (`docs/03_API_CONTRACTS.md` §5.4, `docs/mimari-kararlar.md` W-005).
+   * Başarıda `204`. `draft` değil → `409 TRANSFER_INVALID_TRANSITION`; yok /
+   * başkasının → `403 FORBIDDEN_NOT_OWNER`. Durum değiştiren bir uç olduğundan
+   * `POST` uçlarıyla aynı rate limit'e tabidir (`docs/03` §6, 10 istek/dk,
+   * `userId` anahtarlı).
+   */
+  @Delete(":id")
+  @HttpCode(204)
+  @UseGuards(TransfersThrottlerGuard)
+  @Throttle({ default: TRANSFER_RATE_LIMIT })
+  deleteDraft(
+    @CurrentUser("id") userId: string,
+    @Param(
+      "id",
+      new ParseUUIDPipe({
+        exceptionFactory: () =>
+          new ResourceNotFoundException("Transfer bulunamadı."),
+      }),
+    )
+    transferId: string,
+  ): Promise<void> {
+    return this.transfersService.deleteDraft(userId, transferId);
   }
 }
