@@ -111,6 +111,8 @@ export interface Paginated<T> {
 interface RequestOptions {
   method?: "GET" | "POST" | "PATCH" | "DELETE";
   body?: unknown;
+  /** İstek-özel ek başlıklar (ör. `POST /transfers` için `Idempotency-Key`). */
+  headers?: Record<string, string>;
   /** `Authorization` başlığı eklensin mi? (public auth uçları için `false`) */
   withAuth?: boolean;
   /** Dahili: 401 sonrası tek tekrar denemeyi sınırlamak için. */
@@ -123,12 +125,14 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
   const {
     method = "GET",
     body,
+    headers: extraHeaders,
     withAuth = true,
     _isRetry = false,
     _fullEnvelope = false,
   } = options;
 
   const headers: Record<string, string> = {
+    ...extraHeaders,
     "X-Requested-With": "XMLHttpRequest",
   };
   if (body !== undefined) {
@@ -192,8 +196,8 @@ export const apiClient = {
   /** Sayfalı liste uçları için — `{ data, pagination }` döner (`§5.5` movements). */
   getPaginated: <T>(path: string) =>
     request<Paginated<T>>(path, { _fullEnvelope: true }),
-  post: <T>(path: string, body?: unknown) =>
-    request<T>(path, { method: "POST", body }),
+  post: <T>(path: string, body?: unknown, headers?: Record<string, string>) =>
+    request<T>(path, { method: "POST", body, headers }),
 };
 
 /* ------------------------------------------------------------------ */

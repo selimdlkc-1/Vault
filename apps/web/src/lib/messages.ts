@@ -116,6 +116,40 @@ export const messages = {
     managedSubmitting: "Oluşturuluyor...",
     managedCreatedToast: "Yönetilen cüzdanınız oluşturuldu.",
   },
+  transferNew: {
+    // TR metinler docs/06_SCREEN_CATALOG.md S-TRANSFER-NEW'den birebir.
+    title: "Yeni Transfer",
+    walletLabel: "Gönderen Cüzdan",
+    walletPlaceholder: "Cüzdan seçin",
+    assetLabel: "Varlık",
+    assetPlaceholder: "Varlık seçin",
+    assetNetworkFirst: "Önce gönderen cüzdanı seçin",
+    assetLoading: "Varlıklar yükleniyor...",
+    assetError: "Varlık listesi yüklenemedi.",
+    assetEmpty: "Bu ağda transfer için aktif varlık yok.",
+    toAddressLabel: "Hedef Adres",
+    amountLabel: "Tutar",
+    amountPlaceholder: "0.00",
+    // `${amount}`/`${symbol}` bileşende yerine konur (bilgilendirme, engelleyici değil).
+    availableBalance: "Kullanılabilir bakiye: {amount} {symbol}",
+    submit: "Devam Et",
+    submitting: "Oluşturuluyor...",
+    cancel: "Vazgeç",
+    // Boş state — hiç managed cüzdan yok (docs/06 S-TRANSFER-NEW "Boş").
+    empty: "Transfer göndermek için önce yönetilen bir cüzdan oluşturmalısınız.",
+    emptyCta: "Yönetilen Cüzdan Oluştur",
+    loadError: "Cüzdanlar yüklenemedi.",
+    // Client-side alan ön kontrolleri.
+    errorWalletRequired: "Bir gönderen cüzdan seçin.",
+    errorAssetRequired: "Bir varlık seçin.",
+    errorAddressRequired: "Hedef adres gerekli.",
+    errorAmountInvalid: "Tutar pozitif bir sayı olmalı (ondalık ayracı nokta).",
+    errorAmountDecimals: "Bu varlık en fazla {decimals} ondalık basamak destekler.",
+    errorFieldInvalid: "Bu alan geçersiz.",
+    // Backend hata kodu → alan mesajı (docs/06 S-TRANSFER-NEW "Hata").
+    errorCrossNetwork: "Hedef adres, seçili cüzdanın ağıyla uyuşmuyor.",
+    errorAssetInactive: "Bu varlık şu anda transfer için kullanılamıyor.",
+  },
   movements: {
     // TR metinler docs/06_SCREEN_CATALOG.md §4.3 S-MOVEMENTS'ten birebir.
     title: "Hareketler",
