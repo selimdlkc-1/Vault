@@ -13,8 +13,10 @@ import { TransfersRepository } from "./transfers.repository";
  * `Map` kullanılır çünkü `null` bir obje anahtarı olarak string'e (`"null"`)
  * dönüşürdü; `Map` gerçek `null` anahtarını korur.
  */
-const ALLOWED_TRANSITIONS: ReadonlyMap<TransferState | null, readonly TransferState[]> =
-  new Map<TransferState | null, readonly TransferState[]>([
+export const ALLOWED_TRANSITIONS: ReadonlyMap<
+  TransferState | null,
+  readonly TransferState[]
+> = new Map<TransferState | null, readonly TransferState[]>([
     [null, ["draft"]],
     // İterasyon 2 (§5.2): `draft → pending_signature` step-up + guard'lar geçince.
     // `draft → failed` hedefi İterasyon 3'ün başarısız imzalama senaryosu için

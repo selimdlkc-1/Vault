@@ -4,7 +4,7 @@ import { type INestApplication } from "@nestjs/common";
 import { APP_GUARD } from "@nestjs/core";
 import { JwtService } from "@nestjs/jwt";
 import { Test } from "@nestjs/testing";
-import type { Prisma, Transfer } from "@prisma/client";
+import type { Transfer } from "@prisma/client";
 import request from "supertest";
 import { AuditService } from "../audit/audit.service";
 import { AuthModule } from "../auth/auth.module";
@@ -25,6 +25,7 @@ import { TransfersRepository } from "./transfers.repository";
 import { TransfersService } from "./transfers.service";
 import { TransfersThrottlerGuard } from "./transfers-throttler.guard";
 import { TransferStateMachine } from "./transfer-state-machine.service";
+import { InMemoryTransfersRepository } from "./testing/in-memory-transfers.repository";
 import { SIGNING_QUEUE } from "../workers/signing/signing.queue";
 
 /** `signing` kuyruğu (Faz 5 §5.3) — HTTP testinde iş bırakma no-op'lanır. */
@@ -45,165 +46,6 @@ const MANAGED_WALLET_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const WATCH_ONLY_WALLET_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 const NETWORK_ID = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
 const ASSET_ID = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
-
-class InMemoryTransfersRepository {
-  readonly rows: Transfer[] = [];
-
-  findByIdempotencyKey(
-    userId: string,
-    idempotencyKey: string,
-    notBefore: Date,
-  ): Promise<Transfer | null> {
-    const hit = this.rows.find(
-      (r) =>
-        r.idempotencyKey === idempotencyKey &&
-        r.createdAt.getTime() >= notBefore.getTime(),
-    );
-    return Promise.resolve(hit ?? null);
-  }
-
-  findByWalletAndIdempotencyKey(
-    walletId: string,
-    idempotencyKey: string,
-  ): Promise<Transfer | null> {
-    return Promise.resolve(
-      this.rows.find(
-        (r) => r.walletId === walletId && r.idempotencyKey === idempotencyKey,
-      ) ?? null,
-    );
-  }
-
-  insertTransfer(
-    tx: Prisma.TransactionClient,
-    data: {
-      walletId: string;
-      networkId: string;
-      assetId: string;
-      toAddress: string;
-      amount: string;
-      state: Transfer["state"];
-      idempotencyKey: string;
-    },
-  ): Promise<Transfer> {
-    const now = new Date();
-    const row: Transfer = {
-      id: randomUUID(),
-      walletId: data.walletId,
-      networkId: data.networkId,
-      assetId: data.assetId,
-      toAddress: data.toAddress,
-      amount: data.amount,
-      state: data.state,
-      txHash: null,
-      failureReason: null,
-      idempotencyKey: data.idempotencyKey,
-      createdAt: now,
-      updatedAt: now,
-    };
-    this.rows.push(row);
-    return Promise.resolve(row);
-  }
-
-  readonly stateEvents: unknown[] = [];
-
-  insertStateEvent(tx: Prisma.TransactionClient, data: unknown): Promise<void> {
-    this.stateEvents.push(data);
-    return Promise.resolve();
-  }
-
-  // --- İterasyon 2: confirm() yolu ---
-  readonly owners = new Map<string, string>();
-
-  // --- İterasyon 7 (§5.6b): getById() denetim izi + deleteDraft() ---
-  readonly stateEventRows: {
-    id: string;
-    transferId: string;
-    fromState: Transfer["state"] | null;
-    toState: Transfer["state"];
-    occurredAt: Date;
-    actor: string;
-    metadata: unknown;
-  }[] = [];
-
-  seed(row: Transfer, ownerId: string): void {
-    this.rows.push(row);
-    this.owners.set(row.id, ownerId);
-    // Her transfer en az `null → draft` denetim izi kaydıyla doğar.
-    this.stateEventRows.push({
-      id: randomUUID(),
-      transferId: row.id,
-      fromState: null,
-      toState: "draft",
-      occurredAt: new Date(),
-      actor: "user",
-      metadata: null,
-    });
-  }
-
-  findByIdWithOwner(
-    transferId: string,
-  ): Promise<(Transfer & { wallet: { userId: string } }) | null> {
-    const row = this.rows.find((r) => r.id === transferId);
-    if (!row) return Promise.resolve(null);
-    return Promise.resolve({
-      ...row,
-      wallet: { userId: this.owners.get(row.id) ?? "" },
-    });
-  }
-
-  findByIdWithOwnerAndEvents(transferId: string): Promise<
-    | (Transfer & {
-        wallet: { userId: string };
-        stateEvents: unknown[];
-      })
-    | null
-  > {
-    const row = this.rows.find((r) => r.id === transferId);
-    if (!row) return Promise.resolve(null);
-    return Promise.resolve({
-      ...row,
-      wallet: { userId: this.owners.get(row.id) ?? "" },
-      stateEvents: this.stateEventRows
-        .filter((e) => e.transferId === transferId)
-        .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime()),
-    });
-  }
-
-  deleteDraftCascade(
-    tx: Prisma.TransactionClient,
-    transferId: string,
-  ): Promise<void> {
-    for (let i = this.stateEventRows.length - 1; i >= 0; i -= 1) {
-      if (this.stateEventRows[i].transferId === transferId) {
-        this.stateEventRows.splice(i, 1);
-      }
-    }
-    const idx = this.rows.findIndex((r) => r.id === transferId);
-    if (idx >= 0) this.rows.splice(idx, 1);
-    return Promise.resolve();
-  }
-
-  findByIdInTx(
-    tx: Prisma.TransactionClient,
-    transferId: string,
-  ): Promise<Transfer | null> {
-    const row = this.rows.find((r) => r.id === transferId);
-    // Prisma taze bir obje döndürür — kopyala ki sonraki `updateState` mutasyonu
-    // çağıranın elindeki `current`'ı bozmasın.
-    return Promise.resolve(row ? { ...row } : null);
-  }
-
-  updateState(
-    tx: Prisma.TransactionClient,
-    transferId: string,
-    state: Transfer["state"],
-  ): Promise<Transfer> {
-    const row = this.rows.find((r) => r.id === transferId);
-    if (!row) throw new Error("not found");
-    row.state = state;
-    return Promise.resolve({ ...row });
-  }
-}
 
 describe("TransfersController (integration) — POST /api/v1/transfers", () => {
   let app: INestApplication;
