@@ -299,4 +299,90 @@ describe("TransferStateMachine.transitionTo (İterasyon 2 — §5.2)", () => {
     ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
     expect(repository.updateState).not.toHaveBeenCalled();
   });
+
+  // --- İterasyon 5 (§5.5): broadcast → confirming/failed/dropped,
+  //     confirming → confirmed/dropped/failed ---
+
+  it.each([
+    ["confirming", "worker:confirmation"],
+    ["failed", "worker:confirmation"],
+    ["dropped", "worker:confirmation"],
+  ] as const)(
+    "broadcast → %s: worker:confirmation aktörüyle geçişe izin verilir",
+    async (toState, actor) => {
+      repository.findByIdInTx.mockResolvedValue(
+        transferRow({ state: "broadcast" }),
+      );
+      repository.updateState.mockResolvedValue(transferRow({ state: toState }));
+
+      const result = await machine.transitionTo(TX as never, "abc", toState, actor);
+
+      expect(result.state).toBe(toState);
+      expect(repository.insertStateEvent).toHaveBeenCalledWith(
+        TX,
+        expect.objectContaining({ fromState: "broadcast", toState, actor }),
+      );
+    },
+  );
+
+  it.each(["confirmed", "dropped", "failed"] as const)(
+    "confirming → %s: geçişe izin verilir",
+    async (toState) => {
+      repository.findByIdInTx.mockResolvedValue(
+        transferRow({ state: "confirming" }),
+      );
+      repository.updateState.mockResolvedValue(transferRow({ state: toState }));
+
+      const result = await machine.transitionTo(
+        TX as never,
+        "abc",
+        toState,
+        "worker:confirmation",
+      );
+
+      expect(result.state).toBe(toState);
+    },
+  );
+
+  it("confirming → confirmed metadata state event'e eklenir (depth/blockNumber izi)", async () => {
+    repository.findByIdInTx.mockResolvedValue(
+      transferRow({ state: "confirming" }),
+    );
+    repository.updateState.mockResolvedValue(transferRow({ state: "confirmed" }));
+
+    await machine.transitionTo(TX as never, "abc", "confirmed", "worker:confirmation", {
+      metadata: { step: "confirmation", blockNumber: 1000, depth: 12 },
+    });
+
+    expect(repository.insertStateEvent).toHaveBeenCalledWith(TX, {
+      transferId: "abc",
+      fromState: "confirming",
+      toState: "confirmed",
+      actor: "worker:confirmation",
+      metadata: { step: "confirmation", blockNumber: 1000, depth: 12 },
+    });
+    // `confirmed`/`dropped` failure_reason taşımaz → updateState 3 argümanla.
+    expect(repository.updateState).toHaveBeenCalledWith(TX, "abc", "confirmed");
+  });
+
+  it("terminal durumdan (confirmed) confirmation geçişi denenirse → TRANSFER_INVALID_TRANSITION", async () => {
+    repository.findByIdInTx.mockResolvedValue(
+      transferRow({ state: "confirmed" }),
+    );
+
+    await expect(
+      machine.transitionTo(TX as never, "abc", "confirmed", "worker:confirmation"),
+    ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
+    expect(repository.updateState).not.toHaveBeenCalled();
+  });
+
+  it("confirming → broadcast (geriye) whitelist'te yok → TRANSFER_INVALID_TRANSITION", async () => {
+    repository.findByIdInTx.mockResolvedValue(
+      transferRow({ state: "confirming" }),
+    );
+
+    await expect(
+      machine.transitionTo(TX as never, "abc", "broadcast", "worker:confirmation"),
+    ).rejects.toMatchObject({ code: "TRANSFER_INVALID_TRANSITION" });
+  });
 });

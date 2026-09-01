@@ -11,6 +11,7 @@ import type {
   IChainProvider,
   MintResult,
   RawTransactionInput,
+  TransactionReceipt,
 } from "./i-chain-provider";
 
 /**
@@ -131,6 +132,43 @@ export class EvmProvider implements IChainProvider {
     } catch (error) {
       throw new ChainProviderUnavailableException(
         "EvmProvider.broadcastTransaction",
+        { cause: error },
+      );
+    }
+  }
+
+  /**
+   * `txHash`'in makbuzunu (`eth_getTransactionReceipt`) ve zincirin güncel blok
+   * yüksekliğini (`eth_blockNumber`) tek turda okur (Faz 5 §5.5). Makbuz `null`
+   * ise işlem henüz bloğa girmemiştir → `status: 'pending'`. Girmişse ethers
+   * `receipt.status` 1 → `'success'`, 0 → `'reverted'`. RPC hatası
+   * `ChainProviderUnavailableException`'a `{ cause }` ile sarılır.
+   */
+  async getTransactionReceipt(txHash: string): Promise<TransactionReceipt> {
+    try {
+      const [receipt, currentBlockHeight] = await Promise.all([
+        this.rpc.getTransactionReceipt(txHash),
+        this.rpc.getBlockNumber(),
+      ]);
+
+      if (receipt === null) {
+        return {
+          status: "pending",
+          blockNumber: null,
+          blockHash: null,
+          currentBlockHeight,
+        };
+      }
+
+      return {
+        status: receipt.status === 0 ? "reverted" : "success",
+        blockNumber: receipt.blockNumber,
+        blockHash: receipt.blockHash,
+        currentBlockHeight,
+      };
+    } catch (error) {
+      throw new ChainProviderUnavailableException(
+        "EvmProvider.getTransactionReceipt",
         { cause: error },
       );
     }

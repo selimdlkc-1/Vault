@@ -175,8 +175,9 @@ Bu şema, aşağıdaki tüm bölümlerin referans aldığı temel varlık modeli
 - `pending_signature → signed`: BullMQ `signing` kuyruğundaki worker private key'i decrypt eder (**yalnızca bellekte, hiçbir log'a yazılmaz**), raw tx'i imzalar; başarısızsa `failed`.
 - `signed → broadcast`: `IChainProvider.broadcastTransaction()` çağrılır; RPC hatasında (nonce/gas) `failed`; geçici ağ hatasında (timeout) exponential backoff ile retry, N deneme sonrası `failed` [cross-ref [I-006](#12-entegrasyonlar)].
 - `broadcast → confirming`: confirmation worker tx hash'i izler, ilk bloğa girişte bu duruma geçer.
+- `broadcast → dropped`: tx ağa gönderildikten sonra ağa özel süre içinde hiç bloğa girmediyse (mempool'dan düştü) — confirmation worker zaman aşımını tespit eder (Faz 5 §5.5).
 - `confirming → confirmed`: ağa özel N-blok eşiği geçildiğinde [cross-ref [I-004](#12-entegrasyonlar)].
-- `confirming → dropped`: tx belirlenen süre içinde hiç bloğa girmediyse.
+- `confirming → dropped`: tx bir bloğa girdikten sonra (reorg vb.) tekrar düşüp belirlenen süre içinde yeniden bloğa girmediyse.
 - `confirming → failed`: bloğa girdi ama execution revert etti (EVM) / `FAILED` sonucu döndü (Tron).
 - Terminal durumlardan (`confirmed`/`failed`/`dropped`) **hiçbir geçiş yapılamaz**; worker'lar idempotent çalışır [cross-ref [I-005](#12-entegrasyonlar)].
 

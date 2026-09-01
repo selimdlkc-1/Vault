@@ -15,6 +15,7 @@ import { TransfersModule } from "./transfers/transfers.module";
 import { WalletsModule } from "./wallets/wallets.module";
 import { BalanceSyncModule } from "./workers/balance-sync/balance-sync.module";
 import { BroadcastQueueModule } from "./workers/broadcast/broadcast-queue.module";
+import { ConfirmationQueueModule } from "./workers/confirmation/confirmation-queue.module";
 import { MovementIndexModule } from "./workers/movement-index/movement-index.module";
 import { PortfolioSnapshotModule } from "./workers/portfolio-snapshot/portfolio-snapshot.module";
 import { PriceSyncModule } from "./workers/price-sync/price-sync.module";
@@ -55,6 +56,7 @@ import { SigningQueueModule } from "./workers/signing/signing-queue.module";
     MovementIndexModule,
     SigningQueueModule,
     BroadcastQueueModule,
+    ConfirmationQueueModule,
   ],
   controllers: [],
   providers: [

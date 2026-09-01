@@ -23,6 +23,29 @@ export interface BroadcastResult {
 }
 
 /**
+ * `confirmation` worker'ının (Faz 5 §5.5) blok derinliği izlemek için okuduğu
+ * ağ-agnostik işlem makbuzu.
+ *
+ * - `status: 'pending'` → işlem henüz bir bloğa girmedi (`blockNumber`/`blockHash`
+ *   `null`). Bir bloğa girmişken sonradan `pending`'e dönmesi bir reorg işaretidir.
+ * - `status: 'success'` → işlem bir bloğa girdi ve execution başarılı.
+ * - `status: 'reverted'` → işlem bir bloğa girdi ama execution revert etti (EVM) /
+ *   `FAILED` sonucu döndü (Tron) → worker `confirming → failed`.
+ *
+ * `currentBlockHeight` her çağrıda taze okunur; onay derinliği
+ * `currentBlockHeight - blockNumber` ile **her poll turunda yeniden** hesaplanır
+ * (reorg sonrası sayaç sıfırlanmaz, `docs/mimari-kararlar.md` I-007). `blockHash`
+ * yalnızca EVM'de doludur — Tron tarafında reorg riski confirmation eşiğiyle
+ * pratikte sıfırdır (I-007), `TronProvider` bu alanı `null` döner.
+ */
+export interface TransactionReceipt {
+  readonly status: "pending" | "success" | "reverted";
+  readonly blockNumber: number | null;
+  readonly blockHash: string | null;
+  readonly currentBlockHeight: number;
+}
+
+/**
  * `signing` worker'ının `IChainProvider.signTransaction()`'a geçirdiği ağ-agnostik
  * transfer tanımı (Faz 5 §5.3). Ağa özel ham işlem yapısı (EVM `TransactionRequest`,
  * Tron `transactionBuilder` çıktısı) implementasyonun içinde kurulur — worker bu
@@ -101,6 +124,20 @@ export interface IChainProvider {
    * ayırır (`permanent → failed`, `transient → BullMQ retry`).
    */
   broadcastTransaction(signedTxHex: string): Promise<BroadcastResult>;
+
+  /**
+   * `txHash`'in güncel makbuzunu ve zincirin güncel blok yüksekliğini döner
+   * (`confirmation` worker'ı çağırır, Faz 5 §5.5, `docs/01_DOMAIN_MODEL.md` §5.2
+   * `broadcast → confirming → confirmed/dropped/failed`). Blok onayını **beklemez** —
+   * tek bir anlık okuma yapar; derinlik eşiğini worker değerlendirir.
+   *
+   * EVM: `eth_getTransactionReceipt` + `eth_blockNumber`. Tron:
+   * `getTransactionInfo` + `getCurrentBlock`. RPC hatası
+   * `ChainProviderUnavailableException`'a `{ cause }` ile sarılır — worker bunu
+   * yutar, state geçişi yapmadan bir sonraki poll turunu bekler (polling zaten
+   * tekrar eder, `docs/04_BACKEND_SPEC.md` §8).
+   */
+  getTransactionReceipt(txHash: string): Promise<TransactionReceipt>;
 
   /**
    * `contractAddress`'teki mock ERC-20/TRC-20 kontratının `mint(toAddress,

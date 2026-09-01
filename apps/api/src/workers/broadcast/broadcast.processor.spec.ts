@@ -8,6 +8,7 @@ import type {
   BroadcastContext,
   TransfersService,
 } from "../../transfers/transfers.service";
+import { confirmationJobId, POLL_ONE_JOB } from "../confirmation/confirmation.queue";
 import { BroadcastProcessor } from "./broadcast.processor";
 import { BROADCAST_JOB, type BroadcastJobData } from "./broadcast.queue";
 
@@ -44,6 +45,7 @@ describe("BroadcastProcessor", () => {
   let providers: jest.Mocked<Pick<ChainProviderFactory, "getProvider">>;
   let provider: jest.Mocked<Pick<IChainProvider, "broadcastTransaction">>;
   let prisma: { $transaction: jest.Mock };
+  let confirmationQueue: { add: jest.Mock };
   let processor: BroadcastProcessor;
 
   beforeEach(() => {
@@ -60,11 +62,13 @@ describe("BroadcastProcessor", () => {
     prisma = {
       $transaction: jest.fn((cb: (tx: unknown) => unknown) => cb(TX)),
     };
+    confirmationQueue = { add: jest.fn().mockResolvedValue(undefined) };
     processor = new BroadcastProcessor(
       transfers as unknown as TransfersService,
       stateMachine as unknown as TransferStateMachine,
       providers as unknown as ChainProviderFactory,
       prisma as unknown as PrismaService,
+      confirmationQueue as unknown as import("bullmq").Queue,
     );
   });
 
@@ -84,6 +88,28 @@ describe("BroadcastProcessor", () => {
       { txHash: TX_HASH },
     );
     expect(prisma.$transaction).toHaveBeenCalledTimes(1);
+  });
+
+  it("başarı: broadcast geçişinden sonra confirmation kuyruğuna ilk poll-one bırakılır (dedup jobId ile)", async () => {
+    await processor.process(job());
+
+    expect(confirmationQueue.add).toHaveBeenCalledWith(
+      POLL_ONE_JOB,
+      { transferId: TRANSFER_ID },
+      expect.objectContaining({ jobId: confirmationJobId(TRANSFER_ID) }),
+    );
+  });
+
+  it("broadcast başarısız (kalıcı hata): confirmation kuyruğuna iş bırakılmaz", async () => {
+    provider.broadcastTransaction.mockRejectedValue(
+      Object.assign(new Error("insufficient funds for gas"), {
+        code: "INSUFFICIENT_FUNDS",
+      }),
+    );
+
+    await processor.process(job());
+
+    expect(confirmationQueue.add).not.toHaveBeenCalled();
   });
 
   it("idempotency: getBroadcastContext null (zaten broadcast/terminal) → hiçbir yan etki yok", async () => {

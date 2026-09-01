@@ -1,12 +1,18 @@
-import { Processor, WorkerHost } from "@nestjs/bullmq";
+import { InjectQueue, Processor, WorkerHost } from "@nestjs/bullmq";
 import { Logger } from "@nestjs/common";
 import { classifyRpcError } from "@vault/chain-providers";
-import type { Job } from "bullmq";
+import type { Job, Queue } from "bullmq";
 import { TransferInvalidTransitionException } from "../../common/exceptions/domain.exception";
 import { ChainProviderFactory } from "../../networks/chain-provider.factory";
 import { PrismaService } from "../../prisma/prisma.service";
 import { TransferStateMachine } from "../../transfers/transfer-state-machine.service";
 import { TransfersService } from "../../transfers/transfers.service";
+import {
+  CONFIRMATION_POLL_ONE_OPTS,
+  CONFIRMATION_QUEUE,
+  POLL_ONE_JOB,
+  confirmationJobId,
+} from "../confirmation/confirmation.queue";
 import { BROADCAST_JOB, BROADCAST_QUEUE, type BroadcastJobData } from "./broadcast.queue";
 
 /**
@@ -46,6 +52,7 @@ export class BroadcastProcessor extends WorkerHost {
     private readonly stateMachine: TransferStateMachine,
     private readonly providers: ChainProviderFactory,
     private readonly prisma: PrismaService,
+    @InjectQueue(CONFIRMATION_QUEUE) private readonly confirmationQueue: Queue,
   ) {
     super();
   }
@@ -88,6 +95,16 @@ export class BroadcastProcessor extends WorkerHost {
       ),
     );
     this.logger.debug(`Transfer ${transferId} ağa gönderildi → broadcast (${txHash})`);
+
+    // Geçiş commit oldu → `confirmation` kuyruğuna ilk `poll-one`'u anında bırak
+    // (İterasyon 5 §5.5). Job id `confirmation:${transferId}` — `confirmation`
+    // scheduler'ının fan-out'u da aynı id'yi ürettiğinden çift kontrol BullMQ
+    // deduplication ile engellenir (`docs/mimari-kararlar.md` I-005).
+    await this.confirmationQueue.add(
+      POLL_ONE_JOB,
+      { transferId },
+      { ...CONFIRMATION_POLL_ONE_OPTS, jobId: confirmationJobId(transferId) },
+    );
   }
 
   /**
