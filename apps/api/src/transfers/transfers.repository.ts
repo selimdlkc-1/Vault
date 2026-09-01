@@ -170,6 +170,36 @@ export class TransfersRepository {
   }
 
   /**
+   * `broadcast` veya `confirming` durumundaki tüm transfer id'leri —
+   * `confirmation` worker'ının periyodik fan-out'u (Faz 5 §5.5). Terminal
+   * durumdakiler bu sorgudan doğal olarak dışlanır; worker ayrı bir terminal
+   * kontrolü icat etmez (`.claude/rules/13-critical-modules.md`).
+   */
+  async findInFlightTransferIds(): Promise<string[]> {
+    const rows = await this.prisma.transfer.findMany({
+      where: { state: { in: ["broadcast", "confirming"] } },
+      select: { id: true },
+    });
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Transfer'in en son `confirming`'e girişindeki `transfer_state_events.metadata`
+   * içinde kaydedilen blok hash'i (`confirmation` worker'ının reorg tespiti için
+   * başlangıç referansı — Faz 5 §5.5, `docs/mimari-kararlar.md` I-007). Kayıt yoksa
+   * / metadata blok hash taşımıyorsa `null`.
+   */
+  async findConfirmingBlockHash(transferId: string): Promise<string | null> {
+    const event = await this.prisma.transferStateEvent.findFirst({
+      where: { transferId, toState: "confirming" },
+      orderBy: { occurredAt: "desc" },
+      select: { metadata: true },
+    });
+    const metadata = event?.metadata as { blockHash?: unknown } | null;
+    return typeof metadata?.blockHash === "string" ? metadata.blockHash : null;
+  }
+
+  /**
    * `transfers` satırını çağıranın `$transaction`'ı içinde yaratır
    * (`docs/04_BACKEND_SPEC.md` §7 — insert + `transfer_state_events` yazımı
    * atomik). Yalnızca `TransferStateMachine.enter()` çağırır.

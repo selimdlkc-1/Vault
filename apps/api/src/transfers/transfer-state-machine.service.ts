@@ -27,6 +27,17 @@ const ALLOWED_TRANSITIONS: ReadonlyMap<TransferState | null, readonly TransferSt
     // (`tx_hash` aynı geçişte dolar), kalıcı RPC hatası / retry tükenmesinde
     // `failed`'e geçirir (`docs/01_DOMAIN_MODEL.md` §5.2 `signed → broadcast`).
     ["signed", ["broadcast", "failed"]],
+    // İterasyon 5 (§5.5): `confirmation` worker'ı — ilk bloğa girişte `confirming`,
+    // revert'te `failed`. `broadcast → dropped`: işlem ağa gönderildikten sonra
+    // ağa özel zaman aşımı içinde hiç bloğa girmediyse (`docs/01_DOMAIN_MODEL.md`
+    // §5.2 `confirming → dropped` "süre içinde hiç bloğa girmedi" senaryosu bir
+    // reorg ile bloktan düşmüş `confirming` işlemi kadar hiç bloğa girmemiş
+    // `broadcast` işlemi için de geçerlidir; whitelist bu yüzden `broadcast`'ten
+    // de `dropped`'a izin verir — kullanıcı onayı, İterasyon 5).
+    ["broadcast", ["confirming", "failed", "dropped"]],
+    // İterasyon 5 (§5.5): `confirming` → eşik geçilince `confirmed`, revert'te
+    // `failed`, zaman aşımında `dropped` (`docs/mimari-kararlar.md` I-004/I-007).
+    ["confirming", ["confirmed", "dropped", "failed"]],
   ]);
 
 /**

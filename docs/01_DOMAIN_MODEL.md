@@ -268,6 +268,7 @@ stateDiagram-v2
     signed --> failed
     broadcast --> confirming
     broadcast --> failed
+    broadcast --> dropped
     confirming --> confirmed
     confirming --> dropped
     confirming --> failed
@@ -312,9 +313,9 @@ stateDiagram-v2
 - *Data:* Aynı anda hareket geçmişinde ilgili `ChainMovement` kaydıyla `txHash` üzerinden eşleştirilip tekilleştirilir.
 - *UI:* "Tamamlandı" badge'i, kullanıcıya bildirim gönderilir.
 
-**`confirming → dropped`** (terminal — başarısızlık)
-- *Anlamı:* İşlem belirlenen süre içinde hiç bloğa girmedi, mempool'dan düştü.
-- *Backend:* Zaman aşımı worker'ı tarafından tespit edilir.
+**`broadcast → dropped`** ve **`confirming → dropped`** (terminal — başarısızlık)
+- *Anlamı:* İşlem ağa gönderildikten sonra ağa özel süre içinde hiç bloğa girmedi (`broadcast → dropped`) veya bir bloğa girdikten sonra (reorg vb.) tekrar düşüp süre içinde yeniden bloğa girmedi (`confirming → dropped`) — mempool'dan düştü.
+- *Backend:* Confirmation worker (Faz 5 §5.5) tx hash'in makbuzunu izler; bloğa hiç girmeden geçen süre ağa özel zaman aşımı eşiğini aşarsa bu duruma geçirir.
 - *Data:* `failureReason` alanı doldurulmaz (drop, revert değildir); `TransferStateEvent` kaydı düşer.
 - *UI:* "Düştü" badge'i, kullanıcıya yeniden deneme seçeneği sunulur.
 

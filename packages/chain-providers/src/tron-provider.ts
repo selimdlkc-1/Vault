@@ -12,6 +12,7 @@ import type {
   IChainProvider,
   MintResult,
   RawTransactionInput,
+  TransactionReceipt,
 } from "./i-chain-provider";
 
 /**
@@ -169,6 +170,56 @@ export class TronProvider implements IChainProvider {
     } catch (error) {
       throw new ChainProviderUnavailableException(
         "TronProvider.broadcastTransaction",
+        { cause: error },
+      );
+    }
+  }
+
+  /**
+   * `txHash`'in makbuzunu (`getTransactionInfo`) ve zincirin güncel blok
+   * yüksekliğini (`getCurrentBlock`) tek turda okur (Faz 5 §5.5).
+   * `getTransactionInfo` işlem henüz bloğa girmemişse boş nesne (`{}`) döner →
+   * `status: 'pending'`. Girmişse `info.result === 'FAILED'` veya `receipt.result`
+   * `SUCCESS` dışında bir değerse `'reverted'`, aksi halde `'success'`. `blockHash`
+   * Tron'da izlenmez (reorg toleransı EVM'e özgü, `docs/mimari-kararlar.md` I-007)
+   * → `null`. RPC hatası `ChainProviderUnavailableException`'a sarılır.
+   */
+  async getTransactionReceipt(txHash: string): Promise<TransactionReceipt> {
+    try {
+      const [info, currentBlock] = await Promise.all([
+        this.tronWeb.trx.getTransactionInfo(txHash),
+        this.tronWeb.trx.getCurrentBlock(),
+      ]);
+
+      const currentBlockHeight = Number(
+        currentBlock?.block_header?.raw_data?.number ?? 0,
+      );
+
+      if (!info || info.blockNumber === undefined || info.blockNumber === null) {
+        return {
+          status: "pending",
+          blockNumber: null,
+          blockHash: null,
+          currentBlockHeight,
+        };
+      }
+
+      const receiptResult = info.receipt?.result;
+      const reverted =
+        info.result === "FAILED" ||
+        (receiptResult !== undefined &&
+          receiptResult !== "" &&
+          receiptResult !== "SUCCESS");
+
+      return {
+        status: reverted ? "reverted" : "success",
+        blockNumber: Number(info.blockNumber),
+        blockHash: null,
+        currentBlockHeight,
+      };
+    } catch (error) {
+      throw new ChainProviderUnavailableException(
+        "TronProvider.getTransactionReceipt",
         { cause: error },
       );
     }

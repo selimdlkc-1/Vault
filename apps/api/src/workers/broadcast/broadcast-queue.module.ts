@@ -2,6 +2,7 @@ import { BullModule } from "@nestjs/bullmq";
 import { Module } from "@nestjs/common";
 import { NetworksModule } from "../../networks/networks.module";
 import { TransfersModule } from "../../transfers/transfers.module";
+import { CONFIRMATION_QUEUE } from "../confirmation/confirmation.queue";
 import { BroadcastProcessor } from "./broadcast.processor";
 import { BROADCAST_QUEUE } from "./broadcast.queue";
 
@@ -18,10 +19,16 @@ import { BROADCAST_QUEUE } from "./broadcast.queue";
  * `BullModule.forRoot` bağlantısı `AppModule`'de bir kez tanımlıdır. Kuyruk
  * `SigningQueueModule`'de de `registerQueue` ile kayıtlıdır — `SigningProcessor`
  * başarılı imzalamanın sonunda job ekleyebilsin diye.
+ *
+ * `confirmation` kuyruğu (İterasyon 5 §5.5) burada `registerQueue` ile kayıtlıdır —
+ * `BroadcastProcessor` başarılı broadcast'in sonunda ilk `poll-one` job'unu ekler
+ * (izleme için 15 sn'lik scheduler turu beklenmez). Processor'ı ayrı
+ * `ConfirmationQueueModule`'de yaşar.
  */
 @Module({
   imports: [
     BullModule.registerQueue({ name: BROADCAST_QUEUE }),
+    BullModule.registerQueue({ name: CONFIRMATION_QUEUE }),
     TransfersModule,
     NetworksModule,
   ],

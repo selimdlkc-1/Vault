@@ -86,6 +86,31 @@ export interface BroadcastContext {
 }
 
 /**
+ * `confirmation` worker'ının (Faz 5 §5.5) blok derinliği izlemek için gereken
+ * bağlam. Transfer yok **veya** `state` `broadcast`/`confirming` dışında (draft/
+ * pending_signature/signed = henüz sıra gelmedi; terminal = izleme bitti) ise
+ * `getConfirmationContext` `null` döner ve worker polling'i durdurur — ayrı bir
+ * terminal kontrolü icat edilmez (`.claude/rules/13-critical-modules.md`).
+ */
+export interface ConfirmationContext {
+  transferId: string;
+  state: Extract<TransferStateValue, "broadcast" | "confirming">;
+  txHash: string;
+  chain: { chainType: ChainType; chainId: string };
+  /**
+   * En son state geçişinin zamanı — bloğa hiç girmeden geçen süreyi ölçmek için
+   * (`broadcast`/`confirming → dropped` zaman aşımı, `docs/01_DOMAIN_MODEL.md`
+   * §5.2).
+   */
+  updatedAt: Date;
+  /**
+   * `confirming`'e ilk girişte kaydedilmiş blok hash'i (reorg referansı,
+   * `docs/mimari-kararlar.md` I-007). `broadcast` durumunda / kayıt yoksa `null`.
+   */
+  confirmingBlockHash: string | null;
+}
+
+/**
  * Transfer iş mantığı (`.claude/rules/10` service katmanı). Bu iterasyonda
  * yalnızca draft oluşturma yolu var: sahiplik + managed tip kontrolü
  * (`WalletsService`), istemci-tarafı idempotency, ve `TransferStateMachine.enter()`.
@@ -340,6 +365,48 @@ export class TransfersService {
         chainType: transfer.network.chainType,
         chainId: transfer.network.chainId,
       },
+    };
+  }
+
+  /**
+   * `broadcast`/`confirming` durumundaki tüm transfer id'leri — `confirmation`
+   * worker'ının periyodik fan-out'u (Faz 5 §5.5).
+   */
+  listInFlightTransferIds(): Promise<string[]> {
+    return this.repository.findInFlightTransferIds();
+  }
+
+  /**
+   * `confirmation` worker'ı (Faz 5 §5.5) için transfer + ağ bağlamı. Transfer yok
+   * **veya** `state` `broadcast`/`confirming` dışında ise `null` — worker polling'i
+   * durdurur (`docs/04_BACKEND_SPEC.md` §8 idempotency). `confirming` durumunda
+   * reorg referansı için ilk giriş blok hash'i de çekilir.
+   */
+  async getConfirmationContext(
+    transferId: string,
+  ): Promise<ConfirmationContext | null> {
+    const transfer =
+      await this.repository.findByIdWithChainContext(transferId);
+    if (
+      !transfer ||
+      (transfer.state !== "broadcast" && transfer.state !== "confirming") ||
+      transfer.txHash === null
+    ) {
+      return null;
+    }
+    return {
+      transferId: transfer.id,
+      state: transfer.state,
+      txHash: transfer.txHash,
+      chain: {
+        chainType: transfer.network.chainType,
+        chainId: transfer.network.chainId,
+      },
+      updatedAt: transfer.updatedAt,
+      confirmingBlockHash:
+        transfer.state === "confirming"
+          ? await this.repository.findConfirmingBlockHash(transferId)
+          : null,
     };
   }
 
